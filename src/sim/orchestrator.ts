@@ -64,6 +64,8 @@ interface Route {
 }
 
 const ROUTES: Route[] = [
+  // Self-reported savings progress ("I put in 450") -> logged against the house fund.
+  { match: /(?:put in|saved|deposited|transferred)\s*\$?(\d+)/i, run: (m) => ({ name: "check_in", args: { content: m.input ?? m[0]!, goal_id: "goal_house", amount: Number(m[1]) } }) },
   { match: /briefing|good morning|catch me up|how('s| is) my (week|day)/i, run: () => ({ name: "get_daily_briefing", args: {} }) },
   { match: /balance|how('s| is) my life|am i balanced|overall/i, run: () => ({ name: "get_life_balance", args: {} }) },
   { match: /did it work|how did (my|the) week go|what('s| has) changed|results/i, run: () => ({ name: "whats_changed", args: {} }) },

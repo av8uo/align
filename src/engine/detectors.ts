@@ -19,6 +19,7 @@ export interface Ctx {
   events: EventRow[];
   goals: GoalRow[];
   memory: MemoryRow[];
+  goalLogs: Array<{ goal_id: string; at: string; value: number | null }>;
 }
 
 /** Keyword used to match events to a goal ("Date night with Sam" -> "date night"). */
@@ -113,6 +114,39 @@ export function g5Postponement(ctx: Ctx): Finding[] {
     }));
 }
 
+/** G7 — financial-goal pacing: the user's own numbers only, never advice (policy C4). */
+export function g7FinancePacing(ctx: Ctx): Finding[] {
+  const month = ctx.today.slice(0, 7);
+  const out: Finding[] = [];
+  for (const g of ctx.goals) {
+    if (g.status !== "active" || g.domain !== "finance") continue;
+    const target = Number(g.title.match(/\$(\d+)/)?.[1] ?? 0);
+    if (!target) continue;
+    const logs = ctx.goalLogs.filter((l) => l.goal_id === g.id && l.at.startsWith(month));
+    const sum = logs.reduce((a, l) => a + (l.value ?? 0), 0);
+    if (logs.length === 0) {
+      out.push({
+        detector: "G7",
+        domains: ["finance"],
+        severity: 2,
+        title: `No progress logged in ${month} on "${g.title}"`,
+        evidence: { goalId: g.id, month, target, logged: 0 },
+        confidence: 0.7,
+      });
+    } else if (sum < target) {
+      out.push({
+        detector: "G7",
+        domains: ["finance"],
+        severity: 1,
+        title: `House fund: $${sum} of $${target} logged so far in ${month}`,
+        evidence: { goalId: g.id, month, target, logged: sum },
+        confidence: 0.9,
+      });
+    }
+  }
+  return out;
+}
+
 /** G8 — forward scan: next week's deficits and work×family collisions, before they happen. */
 export function g8ForwardScan(ctx: Ctx): Finding[] {
   const to = addDays(ctx.today, 7);
@@ -159,6 +193,7 @@ export function runDetectors(ctx: Ctx): Finding[] {
     ...g2Neglect(ctx),
     ...g4EveningCreep(ctx),
     ...g5Postponement(ctx),
+    ...g7FinancePacing(ctx),
     ...g8ForwardScan(ctx),
   ];
 }

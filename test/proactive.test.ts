@@ -82,3 +82,30 @@ describe("conversation through the simulated Alexa+ host (rules brain)", () => {
     expect(r.toolCalls[0]?.name).toBe("review_memory");
   });
 });
+
+describe("one week later: measure, adapt, next knowledge gap", () => {
+  it("after the time jump, LifeOS proactively reports measured results and asks about the NEW gap (finances)", async () => {
+    const adv = (await (await fetch(`${base}/demo/advance`, { method: "POST" })).json()) as { today: string };
+    expect(adv.today).toBe("2026-10-26");
+    const r = (await get("/proactive?session_id=demo")) as { quiet: boolean; text: string; data: { outcomes: unknown[] } };
+    expect(r.quiet).toBe(false);
+    expect(r.text).toContain("Results from last week's plan");
+    expect(r.text).toContain("house fund"); // the inquiry engine moved on to the finance gap
+    expect(r.data.outcomes.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it("self-reported savings log with pacing arithmetic (user's own numbers, no advice)", async () => {
+    const r = await chat("I put in 450");
+    expect(r.toolCalls[0]?.name).toBe("check_in");
+    expect(r.reply).toContain("$50 short");
+  });
+
+  it("reset restores day one", async () => {
+    await fetch(`${base}/demo/reset`, { method: "POST" });
+    const h = (await get("/healthz")) as { today: string };
+    expect(h.today).toBe("2026-10-19");
+    const r = (await get("/proactive")) as { quiet: boolean; text: string };
+    expect(r.quiet).toBe(false);
+    expect(r.text).toContain("Sam");
+  });
+});

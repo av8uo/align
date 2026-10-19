@@ -97,6 +97,8 @@
       <button id="mic" class="mic">🎙 Speak</button>
       <label><input type="checkbox" id="tts" checked /> voice replies</label>
       <label><input type="checkbox" id="dot" /> Echo Dot (voice-only) mode</label>
+      <button id="jump" title="Advance the demo clock 7 days">⏭ One week later</button>
+      <button id="reset" title="Re-seed the demo">↺ Reset</button>
       <span id="brain" class="dimtxt"></span>
     </div>
     <div class="log" id="log"></div>
@@ -107,6 +109,7 @@
       <button>Yes, do it</button>
       <button>How am I doing on my goals?</button>
       <button>How did my week go?</button>
+      <button>I put in 450</button>
       <button>What do you know about me?</button>
     </div>
     <div class="inputrow">
@@ -173,7 +176,10 @@ function render(toolCalls, proactiveData) {
   const html = [];
   const datas = proactiveData ? [["get_daily_briefing", proactiveData]] : toolCalls.map((c) => [c.name, c.data || {}]);
   for (const [name, d] of datas) {
-    if (name === "get_daily_briefing") { html.push(balanceCard(d.balance || []), insightsCard(d.insights || [], d.question)); }
+    if (name === "get_daily_briefing") {
+      if ((d.outcomes || []).length) html.push(outcomesCard(d));
+      html.push(balanceCard(d.balance || []), insightsCard(d.insights || [], d.question));
+    }
     else if (name === "get_life_balance") html.push(balanceCard(d.balance || []));
     else if (name === "get_insight") html.push(insightsCard([{ title: d.title, severity: d.severity, domains: d.domains || [] }], null));
     else if (name === "propose_plan") html.push(planCard(d));
@@ -220,17 +226,25 @@ async function send(text) {
 function speakCaption(text) { $("caption").innerHTML = `<span class="who" style="color:var(--dim)">You</span>${esc(text)}`; }
 
 // ---------- proactive opening: LifeOS speaks FIRST (simulated host channel)
-(async function proactive() {
+async function proactive() {
   try {
     const r = await fetch("/proactive?session_id=" + session).then((x) => x.json());
     const h = await fetch("/healthz").then((x) => x.json());
-    $("brain").textContent = "brain: " + (h.brain || "rules");
+    $("brain").textContent = "brain: " + (h.brain || "rules") + " · demo day: " + (h.today || "");
     if (r.quiet) { $("content").innerHTML = '<div class="card dimtxt">Nothing needs your attention right now — LifeOS stays quiet.</div>'; return; }
     addMsg("alexa", "🔔 PROACTIVE (simulated host channel): " + r.text);
     render([], r.data);
     speak(r.text, "LifeOS");
   } catch (e) { $("content").innerHTML = '<div class="card dimtxt">Server unreachable: ' + esc(e.message) + "</div>"; }
-})();
+}
+proactive();
+
+$("jump").onclick = async () => {
+  const r = await fetch("/demo/advance", { method: "POST" }).then((x) => x.json());
+  addMsg("alexa", "— ⏭ one week later (" + r.today + ") —");
+  proactive();
+};
+$("reset").onclick = async () => { await fetch("/demo/reset", { method: "POST" }); location.reload(); };
 
 // ---------- input wiring
 $("send").onclick = () => { send($("input").value); $("input").value = ""; };

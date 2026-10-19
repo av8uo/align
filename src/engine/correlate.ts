@@ -116,11 +116,12 @@ export function upsertInsights(db: DatabaseSync, drafts: InsightDraft[], now: st
     }
     ids.push(id);
   }
-  // Insights that no longer reproduce are dismissed, not left to go stale.
+  // Insights that no longer reproduce are dismissed, not left to go stale —
+  // including previously surfaced ones (a solved problem leaves the briefing).
   const titles = drafts.map((d) => d.title);
   if (titles.length > 0) {
     db.prepare(
-      `UPDATE insights SET status='dismissed' WHERE status='new' AND title NOT IN (${titles.map(() => "?").join(",")})`,
+      `UPDATE insights SET status='dismissed' WHERE status IN ('new','surfaced') AND title NOT IN (${titles.map(() => "?").join(",")})`,
     ).run(...titles);
   }
   return ids;

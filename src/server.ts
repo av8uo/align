@@ -19,6 +19,8 @@ import { seed, DEMO_TODAY } from "./db/seed.js";
 import * as impl from "./tools/impl.js";
 import { orchestrate, newSession, type SessionState, type ToolCallRecord } from "./sim/orchestrator.js";
 import { makeBedrockBrain } from "./sim/bedrock.js";
+import { runEngine } from "./engine/engine.js";
+import { addDays } from "./engine/time.js";
 
 // ---------------------------------------------------------------- latency stats
 const stats = new Map<string, number[]>();
@@ -86,6 +88,9 @@ export function buildMcpServer(db: DatabaseSync, today: string): McpServer {
         balance: zBalance,
         insights: z.array(zInsightSummary),
         question: z.object({ id: z.string(), text: z.string() }).nullable(),
+        outcomes: z
+          .array(z.object({ metric: z.string(), baseline: z.number(), observed: z.number(), verdict: z.string() }))
+          .optional(),
       },
     },
     wrap("get_daily_briefing", (a: { date?: string }) => impl.getDailyBriefing(db, a.date ?? today)),
@@ -292,6 +297,22 @@ const json = (res: ServerResponse, code: number, body: unknown) =>
   res.writeHead(code, { "Content-Type": "application/json" }).end(JSON.stringify(body));
 
 export function createLifeOsHttpServer(db: DatabaseSync, today: string) {
+  // ---- demo clock: mutable so the video can jump a week to show measured
+  // outcomes and the adaptive next question. /demo/reset restores day one.
+  let currentToday = today;
+
+  // ---- continuous background intelligence: the engine re-runs hourly on its
+  // own (and after every check-in/apply), without any prompt. unref() so test
+  // processes exit cleanly.
+  const engineTimer = setInterval(() => {
+    try {
+      runEngine(db, currentToday);
+    } catch (e) {
+      console.warn(`background engine run failed: ${(e as Error).message}`);
+    }
+  }, 60 * 60 * 1000);
+  engineTimer.unref();
+
   // ---- simulated Alexa+ host state: conversation sessions + a self MCP client.
   // The host talks to LifeOS ONLY over the real MCP wire — same as Alexa+ would.
   const sessions = new Map<string, SessionState>();
@@ -327,14 +348,27 @@ export function createLifeOsHttpServer(db: DatabaseSync, today: string) {
     const path = url.pathname;
 
     if (req.method === "OPTIONS") return res.writeHead(204).end();
-    if (path === "/healthz") return json(res, 200, { status: "ok", today, brain: bedrockBrain ? "bedrock" : "rules" });
+    if (path === "/healthz") return json(res, 200, { status: "ok", today: currentToday, brain: bedrockBrain ? "bedrock" : "rules" });
     if (path === "/stats") return json(res, 200, latencyReport());
+
+    // Demo time controls (simulator only — not part of the MCP surface).
+    if (path === "/demo/advance" && req.method === "POST") {
+      currentToday = addDays(currentToday, 7);
+      impl.ensureEngineRun(db, currentToday);
+      return json(res, 200, { today: currentToday });
+    }
+    if (path === "/demo/reset" && req.method === "POST") {
+      seed(db);
+      sessions.clear();
+      currentToday = today;
+      return json(res, 200, { today: currentToday, reset: true });
+    }
 
     // The proactive channel: the HOST polls this; LifeOS speaks first only when
     // the engine found something new, and stays quiet otherwise. On real Alexa+
     // this is the add-on-initiated-turns API we request as platform feedback.
     if (path === "/proactive") {
-      const r = impl.getProactiveNudge(db, today);
+      const r = impl.getProactiveNudge(db, currentToday);
       // The proactive turn is part of the conversation: seed the session's
       // anchors so "fix it" / "tell me more" resolve to what was just said.
       const sid = url.searchParams.get("session_id");
@@ -381,7 +415,7 @@ export function createLifeOsHttpServer(db: DatabaseSync, today: string) {
     }
 
     // Stateless: fresh server + transport per request; all state lives in SQLite.
-    const server = buildMcpServer(db, today);
+    const server = buildMcpServer(db, currentToday);
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     res.on("close", () => {
       void transport.close();

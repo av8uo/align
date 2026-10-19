@@ -46,6 +46,20 @@ export function getDailyBriefing(db: DatabaseSync, today: string): ToolResult {
     .get() as { id: string; text: string } | undefined;
   if (q) markAsked(db, q.id, nowAt(today));
 
+  // Measured results from recently completed follow-up windows: close the loop out loud.
+  const outcomes = db
+    .prepare("SELECT metric, baseline, observed, verdict FROM outcomes WHERE measured_at >= ?")
+    .all(addDays(today, -1)) as Array<{ metric: string; baseline: number; observed: number; verdict: string }>;
+  const resultsLine =
+    outcomes.length > 0
+      ? `Results from last week's plan: ${outcomes
+          .slice(0, 3)
+          .map((o) => `${o.metric.replace("_adherence", "")} went ${o.baseline} to ${o.observed}`)
+          .join(", ")}${outcomes.length > 3 ? `, and ${outcomes.length - 3} more` : ""} — ${
+          outcomes.every((o) => o.verdict === "improved") ? "all improved." : "mostly better."
+        }`
+      : "";
+
   const worst = balance
     .filter((b) => b.score !== null)
     .sort((a, b) => a.score! - b.score!)
@@ -53,6 +67,7 @@ export function getDailyBriefing(db: DatabaseSync, today: string): ToolResult {
     .map((b) => `${b.domain} at ${b.score}`);
   const headline = insights[0]?.title ?? "All domains look on track";
   const text = [
+    resultsLine,
     `Here's your briefing. ${headline}.`,
     worst.length ? `Lowest balance: ${worst.join(", ")}.` : "",
     insights[1] ? `Also: ${insights[1].title}.` : "",
@@ -74,6 +89,7 @@ export function getDailyBriefing(db: DatabaseSync, today: string): ToolResult {
         domains: JSON.parse(i.domains) as string[],
       })),
       question: q ?? null,
+      outcomes,
     },
   };
 }

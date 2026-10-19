@@ -29,6 +29,11 @@ export function loadCtx(db: DatabaseSync, today: string, personId = "alex"): Ctx
     memory: db
       .prepare("SELECT * FROM memory_items WHERE person_id = ? AND status='active'")
       .all(personId) as unknown as MemoryRow[],
+    goalLogs: db.prepare("SELECT goal_id, at, value FROM goal_logs").all() as Array<{
+      goal_id: string;
+      at: string;
+      value: number | null;
+    }>,
   };
 }
 
