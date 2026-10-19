@@ -13,6 +13,7 @@ export const TABLES = [
   "plans",
   "action_log",
   "outcomes",
+  "goal_logs",
   "engine_runs",
 ] as const;
 
@@ -124,6 +125,14 @@ CREATE TABLE IF NOT EXISTS outcomes (
   observed REAL,
   measured_at TEXT NOT NULL,
   verdict TEXT
+);
+
+CREATE TABLE IF NOT EXISTS goal_logs (
+  id TEXT PRIMARY KEY,
+  goal_id TEXT NOT NULL,
+  at TEXT NOT NULL,
+  value REAL,
+  note TEXT
 );
 
 CREATE TABLE IF NOT EXISTS engine_runs (

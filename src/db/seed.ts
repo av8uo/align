@@ -78,7 +78,7 @@ const EVENTS: Ev[] = [
   ["Deep work", "work", 1, 10, 0, 12, 0, 1],
   ["Quarterly planning", "work", 1, 15, 0, 17, 0],
   ["Quarterly report writing", "work", 2, 15, 0, 17, 0, 1, 4], // G5: moved 4 times
-  ["Client workshop", "work", 3, 17, 0, 18, 30], // ↓ G8 collision pair
+  ["Client workshop", "work", 3, 17, 0, 18, 30, 1], // movable ↓ G8 collision pair
   ["School recital — Maya", "family", 3, 18, 0, 19, 30],
   ["Deep work", "work", 4, 10, 0, 12, 0, 1],
 ];
