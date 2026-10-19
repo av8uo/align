@@ -19,6 +19,14 @@ const WD = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", 
 const when = (iso: string) => `${WD[weekdayOf(iso)]} ${iso.slice(11, 16)}`;
 const nowAt = (today: string) => `${today}T08:00:00`;
 
+/**
+ * Respect uncertainty out loud (vision: distinguish facts, patterns, and
+ * hypotheses). Below the confidence bar, LifeOS says so — and user answers
+ * that confirm a pattern remove the hedge on the next turn.
+ */
+const hedge = (confidence: number, s: string): string =>
+  confidence < 0.75 ? `${s} — I'm not fully sure yet, but the pattern is there` : s;
+
 export function ensureEngineRun(db: DatabaseSync, today: string): void {
   const run = db.prepare("SELECT id FROM engine_runs WHERE ran_at LIKE ?").get(`${today}%`);
   if (!run) runEngine(db, today);
@@ -68,7 +76,7 @@ export function getDailyBriefing(db: DatabaseSync, today: string): ToolResult {
   const headline = insights[0]?.title ?? "All domains look on track";
   const text = [
     resultsLine,
-    `Here's your briefing. ${headline}.`,
+    `Here's your briefing. ${insights[0] ? hedge(insights[0].confidence, headline) : headline}.`,
     worst.length ? `Lowest balance: ${worst.join(", ")}.` : "",
     insights[1] ? `Also: ${insights[1].title}.` : "",
     q ? q.text : "",
@@ -133,8 +141,14 @@ export function getInsight(db: DatabaseSync, insightId: string): ToolResult {
     | { id: string; title: string; severity: number; domains: string; evidence: string; reasoning: string; confidence: number }
     | undefined;
   if (!row) return { text: `I don't have an insight with id ${insightId}. Ask for your briefing to see current ones.`, data: {}, isError: true };
+  const certainty =
+    row.confidence < 0.75
+      ? "My working read — not yet confirmed: "
+      : row.confidence >= 0.85
+        ? "I'm confident about this: "
+        : "";
   return {
-    text: `${row.title}. ${row.reasoning} Say "fix it" and I'll propose a plan.`,
+    text: `${row.title}. ${certainty}${row.reasoning} Say "fix it" and I'll propose a plan.`,
     data: {
       id: row.id,
       title: row.title,

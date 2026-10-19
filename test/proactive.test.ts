@@ -41,6 +41,8 @@ describe("proactive channel", () => {
     expect(r.quiet).toBe(false);
     expect(r.text).toContain("Work is crowding");
     expect(r.text).toContain("Sam");
+    // Respects uncertainty: before the user confirms, the insight is hedged.
+    expect(r.text).toContain("not fully sure");
   });
 
   it("stays quiet once everything has been surfaced (proactive ≠ interrupting)", async () => {
@@ -56,10 +58,12 @@ describe("conversation through the simulated Alexa+ host (rules brain)", () => {
     expect(r.brain).toBe("rules");
   });
 
-  it("'how's my week looking' → briefing with cross-domain content", async () => {
+  it("'how's my week looking' → briefing with cross-domain content, hedge GONE after the user confirmed", async () => {
     const r = await chat("How's my week looking?");
     expect(r.toolCalls[0]?.name).toBe("get_daily_briefing");
     expect(r.reply).toContain("Work is crowding");
+    // The check-in raised the insight's confidence past the bar: no more hedging.
+    expect(r.reply).not.toContain("not fully sure");
   });
 
   it("'fix it' → a concrete multi-domain plan awaiting approval", async () => {
