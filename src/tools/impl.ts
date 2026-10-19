@@ -78,6 +78,27 @@ export function getDailyBriefing(db: DatabaseSync, today: string): ToolResult {
   };
 }
 
+/**
+ * Proactive nudge — the differentiator. Called by the HOST (our simulated
+ * Alexa+; on real Alexa+ this is the add-on-initiated-turns API we're
+ * requesting). Speaks first ONLY when the engine found something new;
+ * otherwise stays quiet (vision §8: proactive ≠ interrupting).
+ */
+export function getProactiveNudge(db: DatabaseSync, today: string): ToolResult {
+  ensureEngineRun(db, today);
+  const fresh =
+    (db.prepare("SELECT COUNT(*) AS n FROM insights WHERE status='new'").get() as { n: number }).n +
+    (db.prepare("SELECT COUNT(*) AS n FROM questions WHERE status='pending'").get() as { n: number }).n;
+  if (fresh === 0) {
+    return { text: "", data: { quiet: true, reason: "nothing new needs attention" } };
+  }
+  const briefing = getDailyBriefing(db, today);
+  return {
+    text: briefing.text,
+    data: { quiet: false, proactive: true, ...briefing.data },
+  };
+}
+
 // ---------------------------------------------------------------- balance
 export function getLifeBalance(db: DatabaseSync, today: string): ToolResult {
   ensureEngineRun(db, today);

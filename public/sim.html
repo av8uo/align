@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>LifeOS Simulator</title>
+<style>
+  :root {
+    --bg: #0b0e13; --panel: #14181e; --panel2: #1b2028; --text: #e8ebf0; --dim: #8b93a1;
+    --blue: #37a0f4; --good: #39c47f; --warn: #f5a623; --bad: #f05d5d; --radius: 14px;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--bg); color: var(--text); font: 15px/1.45 "Segoe UI", system-ui, sans-serif; min-height: 100vh; }
+  .wrap { display: grid; grid-template-columns: minmax(420px, 1.25fr) minmax(320px, 1fr); gap: 20px; max-width: 1240px; margin: 0 auto; padding: 18px 16px; }
+  @media (max-width: 900px) { .wrap { grid-template-columns: 1fr; } }
+
+  .badge { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 600; letter-spacing: .4px; }
+  .badge.sim { background: #3a2b10; color: var(--warn); border: 1px solid #5c451d; }
+  .badge.pro { background: #10303a; color: var(--blue); border: 1px solid #1d4a5c; }
+
+  header { max-width: 1240px; margin: 0 auto; padding: 14px 16px 0; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  header h1 { font-size: 20px; } header .sub { color: var(--dim); font-size: 13px; }
+
+  /* ------- Echo Show frame ------- */
+  .device { background: #000; border-radius: 22px; padding: 16px 16px 26px; border: 1px solid #23262c; box-shadow: 0 18px 60px rgba(0,0,0,.55); }
+  .screen { background: linear-gradient(160deg, #10141b, #0c1016); border-radius: 10px; min-height: 480px; padding: 16px; display: flex; flex-direction: column; gap: 12px; overflow: hidden; position: relative; }
+  .statusbar { display: flex; justify-content: space-between; color: var(--dim); font-size: 12px; }
+  .content { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding-right: 4px; }
+  .listen { height: 5px; border-radius: 3px; background: #11202e; overflow: hidden; }
+  .listen.on::after { content: ""; display: block; height: 100%; width: 40%; background: var(--blue); border-radius: 3px; animation: sweep 1s infinite alternate ease-in-out; }
+  @keyframes sweep { from { transform: translateX(-10%);} to { transform: translateX(180%);} }
+  .caption { min-height: 38px; color: var(--text); font-size: 15px; }
+  .caption .who { color: var(--blue); font-weight: 600; margin-right: 6px; }
+  .stand { width: 120px; height: 10px; margin: 14px auto 0; background: #15181d; border-radius: 0 0 10px 10px; }
+
+  .card { background: var(--panel); border: 1px solid #232832; border-radius: var(--radius); padding: 14px; }
+  .card h3 { font-size: 13px; color: var(--dim); text-transform: uppercase; letter-spacing: .6px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+  .row { display: flex; align-items: center; gap: 10px; padding: 5px 0; }
+  .dom { width: 86px; color: var(--dim); font-size: 13px; text-transform: capitalize; }
+  .bar { flex: 1; height: 9px; border-radius: 5px; background: #0f141b; overflow: hidden; }
+  .bar i { display: block; height: 100%; border-radius: 5px; transition: width .7s ease; }
+  .val { width: 64px; text-align: right; font-variant-numeric: tabular-nums; font-size: 13px; }
+  .trend { width: 16px; text-align: center; }
+
+  .insight { border-left: 3px solid var(--warn); padding-left: 10px; margin: 7px 0; }
+  .insight.sev3 { border-color: var(--bad); }
+  .insight small { color: var(--dim); display: block; margin-top: 2px; }
+  .q { background: var(--panel2); border: 1px dashed #2c3340; border-radius: 10px; padding: 10px 12px; color: var(--blue); }
+
+  .change { display: flex; gap: 9px; padding: 5px 0; align-items: baseline; }
+  .change .op { width: 20px; text-align: center; font-weight: 700; }
+  .change .op.add { color: var(--good); } .change .op.move { color: var(--warn); }
+  .ok { color: var(--good); } .dimtxt { color: var(--dim); font-size: 13px; }
+
+  /* ------- right: conversation ------- */
+  .side { display: flex; flex-direction: column; gap: 12px; }
+  .log { background: var(--panel); border: 1px solid #232832; border-radius: var(--radius); padding: 14px; flex: 1; min-height: 300px; max-height: 430px; overflow-y: auto; display: flex; flex-direction: column; gap: 9px; }
+  .msg { max-width: 92%; padding: 8px 12px; border-radius: 12px; font-size: 14px; }
+  .msg.user { align-self: flex-end; background: #16324a; }
+  .msg.alexa { align-self: flex-start; background: var(--panel2); }
+  .msg .tools { margin-top: 5px; color: var(--dim); font-size: 11.5px; }
+  .inputrow { display: flex; gap: 8px; }
+  input[type=text] { flex: 1; background: var(--panel); color: var(--text); border: 1px solid #2a2f3a; border-radius: 10px; padding: 11px 13px; font-size: 14px; }
+  button { background: var(--panel2); color: var(--text); border: 1px solid #2c3340; border-radius: 10px; padding: 10px 14px; cursor: pointer; font-size: 14px; }
+  button:hover { border-color: var(--blue); }
+  button.mic.on { background: #16324a; border-color: var(--blue); }
+  .chips { display: flex; flex-wrap: wrap; gap: 7px; }
+  .chips button { font-size: 12.5px; padding: 6px 11px; border-radius: 999px; }
+  .toggles { display: flex; gap: 8px; align-items: center; color: var(--dim); font-size: 13px; flex-wrap: wrap; }
+  .dotmode .content, .dotmode .statusbar { display: none; }
+  .ring { display: none; margin: auto; width: 150px; height: 150px; border-radius: 50%; border: 6px solid #11202e; }
+  .dotmode .ring { display: block; } .dotmode .ring.on { border-color: var(--blue); box-shadow: 0 0 40px rgba(55,160,244,.4); }
+</style>
+</head>
+<body>
+<header>
+  <h1>LifeOS</h1>
+  <span class="badge sim">SIMULATED ALEXA+ HOST</span>
+  <span class="sub">The MCP server behind this page is real — this host stands in for Alexa+ (deployment is private preview). Proactive turns use the host channel we're requesting from Amazon.</span>
+</header>
+<div class="wrap">
+  <div class="device">
+    <div class="screen" id="screen">
+      <div class="statusbar"><span id="clock">Monday 7:02 AM</span><span>LifeOS</span></div>
+      <div class="content" id="content">
+        <div class="card dimtxt">Waking up…</div>
+      </div>
+      <div class="ring" id="ring"></div>
+      <div class="listen" id="listen"></div>
+      <div class="caption" id="caption"></div>
+    </div>
+    <div class="stand"></div>
+  </div>
+
+  <div class="side">
+    <div class="toggles">
+      <button id="mic" class="mic">🎙 Speak</button>
+      <label><input type="checkbox" id="tts" checked /> voice replies</label>
+      <label><input type="checkbox" id="dot" /> Echo Dot (voice-only) mode</label>
+      <span id="brain" class="dimtxt"></span>
+    </div>
+    <div class="log" id="log"></div>
+    <div class="chips" id="chips">
+      <button>How's my week looking?</button>
+      <button>Tell me more</button>
+      <button>Fix it</button>
+      <button>Yes, do it</button>
+      <button>How am I doing on my goals?</button>
+      <button>How did my week go?</button>
+      <button>What do you know about me?</button>
+    </div>
+    <div class="inputrow">
+      <input type="text" id="input" placeholder="Talk to LifeOS… (or use the mic)" />
+      <button id="send">Send</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const session = "sim-" + Math.random().toString(36).slice(2, 8);
+const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+// ---------- device screen renderers (the "hydrated" views an Alexa device would draw)
+const color = (s) => (s === null ? "#39424f" : s >= 70 ? "var(--good)" : s >= 40 ? "var(--warn)" : "var(--bad)");
+const arrow = { up: "▲", down: "▼", flat: "–" };
+
+function balanceCard(balance) {
+  const rows = balance.map((b) => `
+    <div class="row">
+      <span class="dom">${esc(b.domain)}</span>
+      <span class="bar"><i style="width:${b.score ?? 4}%; background:${color(b.score)}"></i></span>
+      <span class="val">${b.score === null ? "—" : b.score}</span>
+      <span class="trend" style="color:${b.trend === "up" ? "var(--good)" : b.trend === "down" ? "var(--bad)" : "var(--dim)"}">${arrow[b.trend] ?? "–"}</span>
+    </div>`).join("");
+  return `<div class="card"><h3>Life balance <span class="dimtxt">this week</span></h3>${rows}</div>`;
+}
+function insightsCard(insights, question) {
+  const items = insights.map((i) => `
+    <div class="insight sev${i.severity}"><div>${esc(i.title)}</div><small>${i.domains.map(esc).join(" · ")}</small></div>`).join("");
+  const q = question ? `<div class="q">❓ ${esc(question.text)}</div>` : "";
+  return `<div class="card"><h3>What I noticed</h3>${items || '<span class="dimtxt">All clear.</span>'}${q}</div>`;
+}
+function planCard(d) {
+  const rows = (d.changes || []).map((c) => c.op === "create"
+    ? `<div class="change"><span class="op add">＋</span><span>${esc(c.title)} <span class="dimtxt">${esc((c.start || "").slice(0, 16).replace("T", " "))}</span></span></div>`
+    : `<div class="change"><span class="op move">→</span><span>${esc(c.title)} <span class="dimtxt">moves to ${esc((c.to?.start || "").slice(0, 16).replace("T", " "))}</span></span></div>`).join("");
+  return `<div class="card"><h3>Proposed plan <span class="badge pro">needs your yes</span></h3>${rows}
+    <div class="dimtxt" style="margin-top:8px">Trade-offs: ${esc(d.tradeoffs || "none")}</div></div>`;
+}
+function appliedCard(d) {
+  const rows = (d.executed || []).map((e) => `<div class="change"><span class="op ${e.ok ? "add" : "move"}">${e.ok ? "✓" : "✗"}</span><span>${esc(e.detail)}</span></div>`).join("");
+  return `<div class="card"><h3>Applied <span class="${d.allVerified ? "ok" : ""}">${d.allVerified ? "all changes verified" : "partial"}</span></h3>${rows}</div>`;
+}
+function outcomesCard(d) {
+  const rows = (d.outcomes || []).map((o) => `<div class="change"><span class="op ${o.verdict === "improved" ? "add" : "move"}">${o.verdict === "improved" ? "✓" : "•"}</span>
+    <span>${esc(o.metric.replace("_adherence", ""))}: ${o.baseline} → ${o.observed} <span class="dimtxt">(${esc(o.verdict)})</span></span></div>`).join("");
+  return `<div class="card"><h3>Measured results</h3>${rows || '<span class="dimtxt">Nothing measured yet.</span>'}</div>`;
+}
+function goalsCard(d) {
+  const rows = (d.goals || []).map((g) => `
+    <div class="row"><span class="dom">${esc(g.domain)}</span>
+      <span class="bar"><i style="width:${Math.min(100, (g.actual / (g.target || 1)) * 100)}%; background:${g.actual >= g.target ? "var(--good)" : "var(--warn)"}"></i></span>
+      <span class="val">${g.actual}/${g.target}</span><span class="dimtxt">${g.streak_weeks ? g.streak_weeks + "w streak" : ""}</span></div>`).join("");
+  return `<div class="card"><h3>Goals</h3>${rows}</div>`;
+}
+function memoryCard(d) {
+  const rows = (d.memories || []).slice(0, 8).map((m) => `<div class="change"><span class="op dimtxt">${esc(m.kind[0].toUpperCase())}</span><span>${esc(m.content)}</span></div>`).join("");
+  return `<div class="card"><h3>What I remember <span class="dimtxt">say "forget …" to delete</span></h3>${rows}</div>`;
+}
+
+function render(toolCalls, proactiveData) {
+  const html = [];
+  const datas = proactiveData ? [["get_daily_briefing", proactiveData]] : toolCalls.map((c) => [c.name, c.data || {}]);
+  for (const [name, d] of datas) {
+    if (name === "get_daily_briefing") { html.push(balanceCard(d.balance || []), insightsCard(d.insights || [], d.question)); }
+    else if (name === "get_life_balance") html.push(balanceCard(d.balance || []));
+    else if (name === "get_insight") html.push(insightsCard([{ title: d.title, severity: d.severity, domains: d.domains || [] }], null));
+    else if (name === "propose_plan") html.push(planCard(d));
+    else if (name === "apply_plan") html.push(appliedCard(d));
+    else if (name === "whats_changed") html.push(outcomesCard(d));
+    else if (name === "get_goal_progress") html.push(goalsCard(d));
+    else if (name === "review_memory") html.push(memoryCard(d));
+  }
+  if (html.length) $("content").innerHTML = html.join("");
+}
+
+// ---------- conversation
+function addMsg(role, text, tools) {
+  const div = document.createElement("div");
+  div.className = "msg " + role;
+  div.innerHTML = esc(text) + (tools?.length ? `<div class="tools">⚙ MCP: ${tools.map((t) => esc(t.name)).join(" → ")}</div>` : "");
+  $("log").appendChild(div);
+  $("log").scrollTop = 1e9;
+}
+function speak(text, who) {
+  $("caption").innerHTML = `<span class="who">${who}</span>${esc(text)}`;
+  if (!$("tts").checked || !window.speechSynthesis) return;
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.rate = 1.04;
+  $("ring").classList.add("on");
+  u.onend = () => $("ring").classList.remove("on");
+  speechSynthesis.speak(u);
+}
+async function send(text) {
+  if (!text.trim()) return;
+  addMsg("user", text);
+  speakCaption(text);
+  $("listen").classList.add("on");
+  try {
+    const r = await fetch("/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ session_id: session, text }) });
+    const out = await r.json();
+    addMsg("alexa", out.reply, out.toolCalls);
+    render(out.toolCalls);
+    speak(out.reply, "LifeOS");
+  } catch (e) { addMsg("alexa", "Connection problem: " + e.message); }
+  $("listen").classList.remove("on");
+}
+function speakCaption(text) { $("caption").innerHTML = `<span class="who" style="color:var(--dim)">You</span>${esc(text)}`; }
+
+// ---------- proactive opening: LifeOS speaks FIRST (simulated host channel)
+(async function proactive() {
+  try {
+    const r = await fetch("/proactive?session_id=" + session).then((x) => x.json());
+    const h = await fetch("/healthz").then((x) => x.json());
+    $("brain").textContent = "brain: " + (h.brain || "rules");
+    if (r.quiet) { $("content").innerHTML = '<div class="card dimtxt">Nothing needs your attention right now — LifeOS stays quiet.</div>'; return; }
+    addMsg("alexa", "🔔 PROACTIVE (simulated host channel): " + r.text);
+    render([], r.data);
+    speak(r.text, "LifeOS");
+  } catch (e) { $("content").innerHTML = '<div class="card dimtxt">Server unreachable: ' + esc(e.message) + "</div>"; }
+})();
+
+// ---------- input wiring
+$("send").onclick = () => { send($("input").value); $("input").value = ""; };
+$("input").addEventListener("keydown", (e) => { if (e.key === "Enter") { send($("input").value); $("input").value = ""; } });
+$("chips").addEventListener("click", (e) => { if (e.target.tagName === "BUTTON") send(e.target.textContent); });
+$("dot").addEventListener("change", (e) => $("screen").classList.toggle("dotmode", e.target.checked));
+
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+if (SR) {
+  const rec = new SR();
+  rec.lang = "en-US"; rec.interimResults = false;
+  let on = false;
+  $("mic").onclick = () => { on ? rec.stop() : rec.start(); };
+  rec.onstart = () => { on = true; $("mic").classList.add("on"); $("listen").classList.add("on"); };
+  rec.onend = () => { on = false; $("mic").classList.remove("on"); $("listen").classList.remove("on"); };
+  rec.onresult = (e) => send(e.results[0][0].transcript);
+} else { $("mic").disabled = true; $("mic").textContent = "mic n/a"; }
+
+// clock
+const WD = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+setInterval(() => { const d = new Date(); $("clock").textContent = `${WD[d.getDay()]} ${d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`; }, 1000);
+</script>
+</body>
+</html>

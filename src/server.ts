@@ -4,15 +4,21 @@
  * is the client; every tool answers from precomputed state in milliseconds.
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { readFileSync } from "node:fs";
+import type { AddressInfo } from "node:net";
 import { performance } from "node:perf_hooks";
 import { pathToFileURL } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { z } from "zod";
 import type { DatabaseSync } from "node:sqlite";
 import { openDb, migrate } from "./db/schema.js";
 import { seed, DEMO_TODAY } from "./db/seed.js";
 import * as impl from "./tools/impl.js";
+import { orchestrate, newSession, type SessionState, type ToolCallRecord } from "./sim/orchestrator.js";
+import { makeBedrockBrain } from "./sim/bedrock.js";
 
 // ---------------------------------------------------------------- latency stats
 const stats = new Map<string, number[]>();
@@ -264,18 +270,109 @@ const CORS: Record<string, string> = {
   "Access-Control-Expose-Headers": "Mcp-Session-Id",
 };
 
+function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
+  return new Promise((resolve, reject) => {
+    let buf = "";
+    req.on("data", (c: Buffer) => {
+      buf += c.toString();
+      if (buf.length > 1_000_000) reject(new Error("body too large"));
+    });
+    req.on("end", () => {
+      try {
+        resolve(buf ? (JSON.parse(buf) as Record<string, unknown>) : {});
+      } catch (e) {
+        reject(e as Error);
+      }
+    });
+    req.on("error", reject);
+  });
+}
+
+const json = (res: ServerResponse, code: number, body: unknown) =>
+  res.writeHead(code, { "Content-Type": "application/json" }).end(JSON.stringify(body));
+
 export function createLifeOsHttpServer(db: DatabaseSync, today: string) {
-  return createServer(async (req: IncomingMessage, res: ServerResponse) => {
+  // ---- simulated Alexa+ host state: conversation sessions + a self MCP client.
+  // The host talks to LifeOS ONLY over the real MCP wire — same as Alexa+ would.
+  const sessions = new Map<string, SessionState>();
+  let mcp: Client | null = null;
+
+  async function mcpClient(): Promise<Client> {
+    if (mcp) return mcp;
+    const port = (srv.address() as AddressInfo).port;
+    const c = new Client({ name: "lifeos-sim-host", version: "0.1.0" });
+    await c.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`)));
+    mcp = c;
+    return c;
+  }
+  const callTool = async (name: string, args: Record<string, unknown>): Promise<ToolCallRecord> => {
+    const c = await mcpClient();
+    const r = (await c.callTool({ name, arguments: args })) as unknown as {
+      content: Array<{ type: string; text?: string }>;
+      structuredContent?: Record<string, unknown>;
+      isError?: boolean;
+    };
+    return { name, args, text: r.content?.[0]?.text ?? "", data: r.structuredContent, isError: r.isError ?? false };
+  };
+  const listTools = async () => {
+    const c = await mcpClient();
+    const { tools } = await c.listTools();
+    return tools.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema as Record<string, unknown> }));
+  };
+  const bedrockBrain = process.env.LIFEOS_LLM === "bedrock" ? makeBedrockBrain(listTools) : undefined;
+
+  const srv = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     for (const [k, v] of Object.entries(CORS)) res.setHeader(k, v);
-    const path = new URL(req.url ?? "/", "http://localhost").pathname;
+    const url = new URL(req.url ?? "/", "http://localhost");
+    const path = url.pathname;
 
     if (req.method === "OPTIONS") return res.writeHead(204).end();
-    if (path === "/healthz") {
-      return res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ status: "ok", today }));
+    if (path === "/healthz") return json(res, 200, { status: "ok", today, brain: bedrockBrain ? "bedrock" : "rules" });
+    if (path === "/stats") return json(res, 200, latencyReport());
+
+    // The proactive channel: the HOST polls this; LifeOS speaks first only when
+    // the engine found something new, and stays quiet otherwise. On real Alexa+
+    // this is the add-on-initiated-turns API we request as platform feedback.
+    if (path === "/proactive") {
+      const r = impl.getProactiveNudge(db, today);
+      // The proactive turn is part of the conversation: seed the session's
+      // anchors so "fix it" / "tell me more" resolve to what was just said.
+      const sid = url.searchParams.get("session_id");
+      if (sid && r.data.quiet !== true) {
+        const state = sessions.get(sid) ?? newSession();
+        sessions.set(sid, state);
+        const d = r.data as { insights?: Array<{ id: string }>; question?: { id: string } | null };
+        state.lastInsightId = d.insights?.[0]?.id ?? state.lastInsightId;
+        state.lastQuestionId = d.question?.id ?? state.lastQuestionId;
+        state.history.push({ role: "assistant", text: r.text });
+      }
+      return json(res, 200, { quiet: r.data.quiet === true, text: r.text, data: r.data });
     }
-    if (path === "/stats") {
-      return res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify(latencyReport(), null, 2));
+
+    if (path === "/chat" && req.method === "POST") {
+      try {
+        const body = await readJson(req);
+        const text = String(body.text ?? "").trim();
+        if (!text) return json(res, 400, { error: "text is required" });
+        const sid = String(body.session_id ?? "default");
+        const state = sessions.get(sid) ?? newSession();
+        sessions.set(sid, state);
+        const out = await orchestrate(text, state, { callTool, bedrock: bedrockBrain });
+        return json(res, 200, out);
+      } catch (e) {
+        return json(res, 500, { error: (e as Error).message });
+      }
     }
+
+    if (path === "/" || path === "/sim") {
+      try {
+        const html = readFileSync(new URL("../public/sim.html", import.meta.url), "utf8");
+        return res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }).end(html);
+      } catch {
+        return res.writeHead(200, { "Content-Type": "text/plain" }).end("Simulator UI not built yet. MCP endpoint: POST /mcp");
+      }
+    }
+
     if (path !== "/mcp") return res.writeHead(404).end();
     if (req.method !== "POST") {
       return res
@@ -293,6 +390,7 @@ export function createLifeOsHttpServer(db: DatabaseSync, today: string) {
     await server.connect(transport);
     await transport.handleRequest(req, res);
   });
+  return srv;
 }
 
 // ---------------------------------------------------------------- main
