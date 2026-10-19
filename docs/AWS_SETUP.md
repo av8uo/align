@@ -1,6 +1,10 @@
-# Enable the Bedrock brain (owner's 15-minute checklist)
+# AWS setup (owner's one-session checklist — unlocks Bedrock AND the public demo)
 
-The simulator ships with two interchangeable brains. The **rules brain** runs with zero setup (and is the automatic fallback). The **Bedrock brain** — Claude on Amazon Bedrock acting as the Alexa+ orchestrator — is what qualifies the AWS Builder mini challenge, and it needs YOUR AWS account. These are the exact steps.
+One AWS account powers both remaining blockers:
+1. the **Bedrock brain** (Claude as the Alexa+ orchestrator — the AWS Builder prize), and
+2. the **public demo on AWS App Runner** (always-on HTTPS URL for judges; Claude automates the deploy once your keys exist — you only do steps 1–4 below).
+
+"Everything runs on AWS" is also the strongest possible AWS Builder story.
 
 ## 1. AWS account
 - Sign in (or create a free account) at https://console.aws.amazon.com — free tier is enough.
@@ -10,14 +14,10 @@ The simulator ships with two interchangeable brains. The **rules brain** runs wi
 2. Left menu → **Model access** → *Modify model access*.
 3. Enable the **Anthropic Claude** models (at minimum the current Claude Sonnet). Approval is usually instant.
 
-## 3. Create an IAM user with a scoped key
-1. Console → **IAM** → Users → *Create user* → name: `lifeos-bedrock`.
-2. Attach policy: create an inline policy with just:
-   ```json
-   { "Version": "2012-10-17", "Statement": [{ "Effect": "Allow",
-     "Action": ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
-     "Resource": "*" }] }
-   ```
+## 3. Create an IAM user
+1. Console → **IAM** → Users → *Create user* → name: `lifeos-hackathon`.
+2. Permissions → *Attach policies directly* → **AdministratorAccess**.
+   (Pragmatic for one hackathon week in your personal account — it lets Claude set up ECR + App Runner + env config for you. Delete this user right after the hackathon. If you prefer least-privilege instead, attach: `AmazonBedrockFullAccess`, `AmazonEC2ContainerRegistryFullAccess`, `AWSAppRunnerFullAccess`, plus `iam:CreateRole`/`iam:PassRole` for the App Runner ECR access role.)
 3. User → *Security credentials* → *Create access key* (choose "Application running outside AWS").
 4. Copy the **Access key ID** and **Secret access key** once — they are shown only once.
 
@@ -36,6 +36,13 @@ Optional model override: `$env:BEDROCK_MODEL_ID = "us.anthropic.claude-sonnet-4-
 1. `curl http://localhost:3344/healthz` → must show `"brain":"bedrock"`.
 2. Open http://localhost:3344/sim and say something OUTSIDE the rules patterns, e.g. *"I feel like my weekends disappear, what should I do?"* — a useful, tool-grounded answer proves the LLM path (the rules brain would just file a check-in).
 3. Failure drill (already covered by automated tests, worth seeing once): set `$env:AWS_ACCESS_KEY_ID="broken"`, restart, chat — the reply still works and the server log shows `bedrock brain failed (...); falling back to rules`.
+
+## 6. Hand off to Claude (deployment)
+Once the env vars from step 4 are set in the session, say so — Claude then:
+1. creates an ECR repository and pushes the already-built Docker image,
+2. creates the App Runner service (0.25 vCPU, health check on `/healthz`, env `LIFEOS_LLM=bedrock`),
+3. gives you the public `https://….awsapprunner.com` URL and smoke-tests the full demo arc on it.
+Expected cost: roughly $5–10 for the hackathon week; delete the service afterwards.
 
 ## Troubleshooting
 | Symptom | Fix |
