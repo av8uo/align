@@ -1,0 +1,21 @@
+{
+  "name": "lifeos",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "LifeOS — a proactive, cross-domain life optimization agent for Alexa+ (MCP server)",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "seed": "tsx src/db/seed.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
+  }
+}
