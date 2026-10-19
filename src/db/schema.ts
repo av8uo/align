@@ -102,6 +102,7 @@ CREATE TABLE IF NOT EXISTS plans (
   changes TEXT NOT NULL,
   tradeoffs TEXT,
   expected_benefit TEXT,
+  hypothesis TEXT,
   status TEXT NOT NULL DEFAULT 'proposed',
   approved_at TEXT,
   executed_at TEXT
@@ -152,4 +153,10 @@ export function openDb(path?: string): DatabaseSync {
 
 export function migrate(db: DatabaseSync): void {
   db.exec(DDL);
+  // Lightweight forward migration for databases created before the column existed.
+  try {
+    db.exec("ALTER TABLE plans ADD COLUMN hypothesis TEXT");
+  } catch {
+    /* column already exists */
+  }
 }

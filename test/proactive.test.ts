@@ -72,6 +72,8 @@ describe("conversation through the simulated Alexa+ host (rules brain)", () => {
     const changes = (r.toolCalls[0]!.data as { changes: Array<{ domain: string }> }).changes;
     expect(new Set(changes.map((c) => c.domain)).size).toBeGreaterThanOrEqual(3); // family+health+personal+work
     expect(r.reply).toContain("Shall I apply it?");
+    // Every plan is a measurable experiment, declared up front.
+    expect(r.reply).toContain("my hypothesis");
   });
 
   it("'yes, do it' → verified execution", async () => {
@@ -79,6 +81,13 @@ describe("conversation through the simulated Alexa+ host (rules brain)", () => {
     expect(r.toolCalls[0]?.name).toBe("apply_plan");
     expect((r.toolCalls[0]!.data as { allVerified: boolean }).allVerified).toBe(true);
     expect(r.reply).toContain("verified");
+  });
+
+  it("what-if simulation: previews a collision BEFORE the user commits", async () => {
+    const r = await chat("What if I take a client dinner on Thursday at 7pm?");
+    expect(r.toolCalls[0]?.name).toBe("simulate_change");
+    expect(r.reply).toContain("School recital"); // collides with Maya's recital
+    expect(r.reply).toContain("different slot");
   });
 
   it("'what do you know about me' → memory transparency", async () => {
@@ -102,6 +111,12 @@ describe("one week later: measure, adapt, next knowledge gap", () => {
     const r = await chat("I put in 450");
     expect(r.toolCalls[0]?.name).toBe("check_in");
     expect(r.reply).toContain("$50 short");
+  });
+
+  it("'how did my week go' → the hypothesis is reported as confirmed", async () => {
+    const r = await chat("How did my week go?");
+    expect(r.toolCalls[0]?.name).toBe("whats_changed");
+    expect(r.reply).toContain("Hypothesis confirmed");
   });
 
   it("reset restores day one", async () => {

@@ -204,7 +204,8 @@ export function buildMcpServer(db: DatabaseSync, today: string): McpServer {
       inputSchema: { insight_id: z.string() },
       outputSchema: {
         plan_id: z.string(), title: z.string().optional(), changes: z.array(zChange),
-        tradeoffs: z.string().optional(), expected_benefit: z.string().optional(), requires_approval: z.boolean().optional(),
+        tradeoffs: z.string().optional(), expected_benefit: z.string().optional(),
+        hypothesis: z.string().nullable().optional(), requires_approval: z.boolean().optional(),
       },
     },
     wrap("propose_plan", (a: { insight_id: string }) => impl.proposePlanTool(db, today, a.insight_id)),
@@ -224,6 +225,31 @@ export function buildMcpServer(db: DatabaseSync, today: string): McpServer {
       },
     },
     wrap("apply_plan", (a: { plan_id: string; approve: boolean }) => impl.applyPlanTool(db, today, a.plan_id, a.approve)),
+  );
+
+  server.registerTool(
+    "simulate_change",
+    {
+      title: "What-if simulation",
+      description:
+        "Preview the cost of a decision BEFORE making it: hypothetically add an event and report what would collide and which goals would lose their slot. Use for 'what if I take…', 'can I fit…', 'should I accept the Thursday dinner'.",
+      inputSchema: {
+        title: z.string().describe("What the hypothetical commitment is, e.g. 'client dinner'"),
+        day: z.string().describe("Weekday name within this week (e.g. Thursday) or YYYY-MM-DD"),
+        start_time: z.string().describe("Start time, 24h HH:MM (e.g. 19:00)"),
+        duration_minutes: z.number().int().min(15).max(600).optional().describe("Default 120"),
+        domain: z.enum(["work", "family", "health", "personal", "household", "admin"]).optional(),
+      },
+      outputSchema: {
+        hypothetical: z.object({ title: z.string(), start: z.string(), end: z.string() }).optional(),
+        conflicts: z.array(z.object({ title: z.string(), start: z.string(), domain: z.string() })).optional(),
+        new_risks: z.array(z.string()).optional(),
+        recommendation: z.string().optional(),
+      },
+    },
+    wrap("simulate_change", (a: { title: string; day: string; start_time: string; duration_minutes?: number; domain?: "work" | "family" | "health" | "personal" | "household" | "admin" }) =>
+      impl.simulateChange(db, today, a),
+    ),
   );
 
   server.registerTool(
@@ -258,7 +284,11 @@ export function buildMcpServer(db: DatabaseSync, today: string): McpServer {
       inputSchema: { since: z.string().optional().describe("ISO date; defaults to one week ago") },
       outputSchema: {
         since: z.string(),
-        outcomes: z.array(z.object({ metric: z.string(), baseline: z.number(), observed: z.number(), verdict: z.string(), title: z.string() })),
+        outcomes: z.array(
+          z.object({ metric: z.string(), baseline: z.number(), observed: z.number(), verdict: z.string(), title: z.string() }).passthrough(),
+        ),
+        hypothesis: z.string().nullable().optional(),
+        hypothesis_confirmed: z.boolean().optional(),
       },
     },
     wrap("whats_changed", (a: { since?: string }) => impl.whatsChanged(db, today, a.since)),

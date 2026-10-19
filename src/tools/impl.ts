@@ -13,7 +13,8 @@ import { markAsked, recordAnswer } from "../engine/inquiry.js";
 import { applyPlan } from "../engine/executor.js";
 import { proposePlan } from "../engine/solver.js";
 import { type Change } from "../engine/learn.js";
-import { addDays, weekdayOf } from "../engine/time.js";
+import { addDays, fromMs, overlaps, toMs, weekdayOf } from "../engine/time.js";
+import { runDetectors } from "../engine/detectors.js";
 
 const WD = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const when = (iso: string) => `${WD[weekdayOf(iso)]} ${iso.slice(11, 16)}`;
@@ -274,8 +275,13 @@ export function proposePlanTool(db: DatabaseSync, today: string, insightId: stri
     c.op === "create" ? `add "${c.title}" ${when(c.start!)}` : `move "${c.title}" to ${when(c.to!.start)}`,
   );
   return {
-    text: `Here's the plan: ${human.join("; ")}. Trade-offs: ${plan.tradeoffs} Shall I apply it?`,
-    data: { plan_id: plan.id, title: plan.title, changes: plan.changes, tradeoffs: plan.tradeoffs, expected_benefit: plan.expectedBenefit, requires_approval: true },
+    text: `Here's the plan: ${human.join("; ")}. Trade-offs: ${plan.tradeoffs}${
+      plan.hypothesis ? ` This is an experiment — my hypothesis: ${plan.hypothesis} I'll measure it next week.` : ""
+    } Shall I apply it?`,
+    data: {
+      plan_id: plan.id, title: plan.title, changes: plan.changes, tradeoffs: plan.tradeoffs,
+      expected_benefit: plan.expectedBenefit, hypothesis: plan.hypothesis, requires_approval: true,
+    },
   };
 }
 
@@ -302,6 +308,60 @@ export function applyPlanTool(db: DatabaseSync, today: string, planId: string, a
   }
 }
 
+// ---------------------------------------------------------------- what-if simulation
+/**
+ * Think AHEAD of the user: preview the cost of a decision before it's made.
+ * Inserts a hypothetical event, re-runs every detector on the alternate week,
+ * and reports exactly what would break — pure functions make this instant.
+ */
+export function simulateChange(
+  db: DatabaseSync,
+  today: string,
+  args: { title: string; day: string; start_time: string; duration_minutes?: number; domain?: string },
+): ToolResult {
+  const ctx = loadCtx(db, today);
+  const wd = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"].indexOf(
+    args.day.trim().toLowerCase(),
+  );
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(args.day) ? args.day : wd >= 0 ? addDays(today, wd) : null;
+  if (!date) {
+    return { text: `Which day do you mean? Say a weekday like "Thursday" or a date.`, data: {}, isError: true };
+  }
+  const start = `${date}T${args.start_time.padStart(5, "0")}:00`;
+  const end = fromMs(toMs(start) + (args.duration_minutes ?? 120) * 60_000);
+  const hypothetical = {
+    id: "evt_hypothetical",
+    person_id: "alex",
+    title: args.title,
+    start,
+    end,
+    domain: (args.domain ?? "work") as "work",
+    flexible: 0,
+    source: "seed" as const,
+    reschedule_count: 0,
+  };
+
+  const base = runDetectors(ctx);
+  const alt = runDetectors({ ...ctx, events: [...ctx.events, hypothetical] });
+  const newRisks = alt.filter((f) => !base.some((b) => b.title === f.title)).map((f) => f.title);
+  const conflicts = ctx.events
+    .filter((e) => e.start.slice(0, 10) === date && overlaps(start, end, e.start, e.end))
+    .map((e) => ({ title: e.title, start: e.start, domain: e.domain }));
+
+  const safe = conflicts.length === 0 && newRisks.length === 0;
+  const text = safe
+    ? `I checked the week: "${args.title}" on ${args.day} at ${args.start_time} fits — no conflicts, and none of your goals lose their slot.`
+    : `If you take "${args.title}" ${args.day} at ${args.start_time}: ${[
+        ...conflicts.map((c) => `it collides with ${c.title} at ${c.start.slice(11, 16)}`),
+        ...newRisks.map((r) => r.toLowerCase()),
+      ].join("; ")}. I'd look for a different slot — want me to find one?`;
+
+  return {
+    text,
+    data: { hypothetical: { title: args.title, start, end }, conflicts, new_risks: newRisks, recommendation: safe ? "safe" : "reschedule" },
+  };
+}
+
 // ---------------------------------------------------------------- what changed
 export function whatsChanged(db: DatabaseSync, today: string, since?: string): ToolResult {
   const from = since ?? addDays(today, -7);
@@ -309,12 +369,16 @@ export function whatsChanged(db: DatabaseSync, today: string, since?: string): T
   runEngine(db, today);
   const outcomes = db
     .prepare(
-      `SELECT o.metric, o.baseline, o.observed, o.verdict, p.title FROM outcomes o JOIN plans p ON p.id=o.plan_id WHERE o.measured_at >= ?`,
+      `SELECT o.metric, o.baseline, o.observed, o.verdict, p.title, p.hypothesis FROM outcomes o JOIN plans p ON p.id=o.plan_id WHERE o.measured_at >= ?`,
     )
-    .all(from) as Array<{ metric: string; baseline: number; observed: number; verdict: string; title: string }>;
+    .all(from) as Array<{ metric: string; baseline: number; observed: number; verdict: string; title: string; hypothesis: string | null }>;
+  const hypothesis = outcomes.find((o) => o.hypothesis)?.hypothesis ?? null;
+  const confirmed = outcomes.length > 0 && outcomes.every((o) => o.verdict === "improved");
   const text =
     outcomes.length === 0
       ? "No measured outcomes yet — results land a week after a plan is applied."
-      : `Results: ${outcomes.map((o) => `${o.metric.replace("_adherence", "")} went ${o.baseline} to ${o.observed} (${o.verdict})`).join("; ")}.`;
-  return { text, data: { since: from, outcomes } };
+      : `Results: ${outcomes.map((o) => `${o.metric.replace("_adherence", "")} went ${o.baseline} to ${o.observed} (${o.verdict})`).join("; ")}.${
+          hypothesis ? ` ${confirmed ? "Hypothesis confirmed" : "Hypothesis partly held"}: ${hypothesis}` : ""
+        }`;
+  return { text, data: { since: from, outcomes, hypothesis, hypothesis_confirmed: confirmed } };
 }

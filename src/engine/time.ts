@@ -41,6 +41,12 @@ export const daysBetween = (fromIso: string, toIso: string): number =>
 export const overlaps = (aS: string, aE: string, bS: string, bE: string): boolean =>
   aS < bE && bS < aE;
 
+/** Epoch ms back to local-naive ISO. */
+export function fromMs(ms: number): string {
+  const t = new Date(ms);
+  return `${t.getUTCFullYear()}-${pad(t.getUTCMonth() + 1)}-${pad(t.getUTCDate())}T${pad(t.getUTCHours())}:${pad(t.getUTCMinutes())}:00`;
+}
+
 /** 0 = Monday ... 6 = Sunday. */
 export function weekdayOf(iso: string): number {
   const [y, m, d] = iso.slice(0, 10).split("-").map(Number) as [number, number, number];

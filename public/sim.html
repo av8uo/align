@@ -108,6 +108,7 @@
       <button>Fix it</button>
       <button>Yes, do it</button>
       <button>How am I doing on my goals?</button>
+      <button>What if I take a client dinner on Thursday at 7pm?</button>
       <button>How did my week go?</button>
       <button>I put in 450</button>
       <button>What do you know about me?</button>
@@ -167,6 +168,14 @@ function goalsCard(d) {
       <span class="val">${g.actual}/${g.target}</span><span class="dimtxt">${g.streak_weeks ? g.streak_weeks + "w streak" : ""}</span></div>`).join("");
   return `<div class="card"><h3>Goals</h3>${rows}</div>`;
 }
+function simCard(d) {
+  const conflicts = (d.conflicts || []).map((c) => `<div class="change"><span class="op move">✗</span><span>collides with ${esc(c.title)} <span class="dimtxt">${esc((c.start || "").slice(11, 16))}</span></span></div>`).join("");
+  const risks = (d.new_risks || []).map((r) => `<div class="change"><span class="op move">⚠</span><span>${esc(r)}</span></div>`).join("");
+  const verdict = d.recommendation === "safe"
+    ? '<div class="change"><span class="op add">✓</span><span>Fits — no conflicts, no goals lost</span></div>'
+    : '<div class="dimtxt" style="margin-top:8px">Recommendation: pick a different slot</div>';
+  return `<div class="card"><h3>What-if: ${esc(d.hypothetical?.title || "")} <span class="badge pro">SIMULATED FUTURE</span></h3>${conflicts}${risks}${d.recommendation === "safe" ? verdict : conflicts || risks ? verdict : ""}</div>`;
+}
 function memoryCard(d) {
   const rows = (d.memories || []).slice(0, 8).map((m) => `<div class="change"><span class="op dimtxt">${esc(m.kind[0].toUpperCase())}</span><span>${esc(m.content)}</span></div>`).join("");
   return `<div class="card"><h3>What I remember <span class="dimtxt">say "forget …" to delete</span></h3>${rows}</div>`;
@@ -187,6 +196,7 @@ function render(toolCalls, proactiveData) {
     else if (name === "whats_changed") html.push(outcomesCard(d));
     else if (name === "get_goal_progress") html.push(goalsCard(d));
     else if (name === "review_memory") html.push(memoryCard(d));
+    else if (name === "simulate_change") html.push(simCard(d));
   }
   if (html.length) $("content").innerHTML = html.join("");
 }

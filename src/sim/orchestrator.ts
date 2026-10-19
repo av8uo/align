@@ -64,6 +64,21 @@ interface Route {
 }
 
 const ROUTES: Route[] = [
+  // What-if simulation: "what (happens) if I take a client dinner on Thursday at 7pm"
+  {
+    match:
+      /what (?:happens )?if i (?:take|accept|add|schedule) (?:an? )?(.+?)(?: on)? (monday|tuesday|wednesday|thursday|friday|saturday|sunday)(?: at (\d{1,2})(?::(\d{2}))?\s*(pm|am)?)?\??$/i,
+    run: (m) => {
+      let h = m[3] ? Number(m[3]) : 19;
+      const ap = m[5]?.toLowerCase();
+      if (ap === "pm" && h < 12) h += 12;
+      if (ap === "am" && h === 12) h = 0;
+      return {
+        name: "simulate_change",
+        args: { title: m[1]!, day: m[2]!, start_time: `${String(h).padStart(2, "0")}:${m[4] ?? "00"}` },
+      };
+    },
+  },
   // Self-reported savings progress ("I put in 450") -> logged against the house fund.
   { match: /(?:put in|saved|deposited|transferred)\s*\$?(\d+)/i, run: (m) => ({ name: "check_in", args: { content: m.input ?? m[0]!, goal_id: "goal_house", amount: Number(m[1]) } }) },
   { match: /briefing|good morning|catch me up|how('s| is) my (week|day)/i, run: () => ({ name: "get_daily_briefing", args: {} }) },

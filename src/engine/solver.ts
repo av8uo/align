@@ -52,6 +52,7 @@ export interface ProposedPlan {
   changes: Array<Change & { kind: string; priorScore: number }>;
   tradeoffs: string;
   expectedBenefit: string;
+  hypothesis: string | null;
 }
 
 export function proposePlan(db: DatabaseSync, insightId: string, today: string): ProposedPlan {
@@ -111,6 +112,15 @@ export function proposePlan(db: DatabaseSync, insightId: string, today: string):
     })
     .filter((c) => c.priorScore >= 0.2);
 
+  // Every plan is a measurable experiment: state the hypothesis up front,
+  // measure it a week later (outcomes), report confirmed or refuted.
+  const hypothesis =
+    restored.length > 0
+      ? `Protecting ${restored.join(", ")} this week lifts their adherence above last week's baseline.`
+      : moved.length > 0
+        ? `Resolving the schedule conflict prevents a missed family commitment this week.`
+        : null;
+
   const plan: ProposedPlan = {
     id: newId("plan"),
     insightId,
@@ -118,10 +128,11 @@ export function proposePlan(db: DatabaseSync, insightId: string, today: string):
     changes: weighted,
     tradeoffs: moved.length > 0 ? moved.join("; ") : "No locked meetings touched; new blocks use free time.",
     expectedBenefit: `Restores ${restored.join(", ")} this week${moved.length ? " and clears the schedule conflict" : ""}.`,
+    hypothesis,
   };
 
   db.prepare(
-    "INSERT INTO plans (id, insight_id, title, changes, tradeoffs, expected_benefit, status) VALUES (?, ?, ?, ?, ?, ?, 'proposed')",
-  ).run(plan.id, insightId, plan.title, JSON.stringify(plan.changes), plan.tradeoffs, plan.expectedBenefit);
+    "INSERT INTO plans (id, insight_id, title, changes, tradeoffs, expected_benefit, hypothesis, status) VALUES (?, ?, ?, ?, ?, ?, ?, 'proposed')",
+  ).run(plan.id, insightId, plan.title, JSON.stringify(plan.changes), plan.tradeoffs, plan.expectedBenefit, plan.hypothesis);
   return plan;
 }

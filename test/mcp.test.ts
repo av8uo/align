@@ -42,9 +42,9 @@ afterAll(async () => {
 });
 
 describe("MCP wire protocol", () => {
-  it("lists all 12 tools with schemas", async () => {
+  it("lists all 13 tools with schemas", async () => {
     const { tools } = await client.listTools();
-    expect(tools.length).toBe(12);
+    expect(tools.length).toBe(13);
     const names = tools.map((t) => t.name);
     for (const n of ["get_daily_briefing", "get_life_balance", "check_in", "propose_plan", "apply_plan", "review_memory", "forget", "whats_changed"]) {
       expect(names).toContain(n);
