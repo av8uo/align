@@ -1,55 +1,70 @@
-# Align — Demo Script (video spine, < 3:00)
+# Align — Demo Video Script (FINAL, < 3:00)
 
-Anchor date: Monday 2026-10-19 (`LIFEOS_DEMO_TODAY`). Persona: **Alex** — married to Sam, kids Maya & Leo, full-time job, goals: weekly date night, gym 3×, Spanish 3×, call Mom weekly, save $500/mo (house fund).
+**Format:** screen recording of the simulator (`http://localhost:3344/sim`) with **"voice replies" ON** — Align's TTS is the agent's voice. Alex's lines are delivered by clicking the demo chips / typing (captions carry them), or speak them via the 🎙 mic if you prefer your own voice. Judges may stop at 3:00 — strongest material first; **every beat ends with something done.**
 
-> Rule from certification guide: judges may stop at 3:00 — strongest material first. Every beat ends with something **done**.
-
-## Cold open (0:00–0:15)
-Screen: phone with 47 notifications vs an Echo Show on a kitchen counter.
-VO: *"Every AI works for one request at a time. None of them watches your life drift away from what you said matters. Align does."*
-
-## Beat 1 — The briefing that knows your whole life (0:15–1:00)
-**Alex:** "Alexa, good morning."
-→ `get_daily_briefing` (+ Life Balance widget renders)
-
-**Align:** *"Morning, Alex. Your balance this week: career ran nine hours over. You and Sam haven't had an evening together in almost a month — against your weekly date-night goal. Spanish is untouched twelve days. And looking ahead: this week has zero gym slots, and Thursday's client workshop collides with Maya's school recital. One question — how are things with Sam lately?"*
-
-Widget: **Life Balance wheel** — family/marriage dipping red, career ballooning, drift arrows. Forward-scan chip: "2 conflicts next 7 days".
-
-**Alex:** "Honestly, we barely talk. Work is eating everything."
-→ `check_in` — memory updated on screen ("experience recorded → linked to insight ins_001").
-
-## Beat 2 — From insight to verified action (1:00–1:50)
-**Alex:** "Fix it."
-→ `propose_plan(ins_001)` → plan-diff widget
-
-**Align:** *"Here's what I'd change: protect Friday 7 to 10 pm for you and Sam. Move Thursday's client workshop 90 minutes earlier so you make Maya's recital. Two Spanish mornings Tuesday and Friday. Your locked meetings don't move. Trade-off: your Wednesday deep-work block shifts to 1 pm."*
-
-**Alex:** "Do it."
-→ `apply_plan` — widget shows each change **verified ✓** against the calendar (re-read after write).
-
-**Align:** *"Done and verified. Friday is yours and Sam's. I'll check how it went next week."*
-
-## Beat 3 — It measures, remembers, adapts (1:50–2:20)
-Time-jump card: "one week later" (`LIFEOS_DEMO_TODAY=2026-10-26`).
-**Alex:** "Alexa, how did my week go?"
-→ `whats_changed` + `get_goal_progress`
-
-**Align:** *"Date night happened — first in a month. Spanish two of three. Gym still stuck at one, so next week I'll try mornings instead of evenings. And you wanted $500 into the house fund this month — how did October go?"*
-**Alex:** "I put in 450."
-→ `check_in` → *"Logged. $50 short but on pace for the year."*
-
-## Beat 4 — Under the hood + portability (2:20–2:50)
-Fast cuts: architecture diagram; **the same MCP server answering inside Claude** (10 s — proves a real, portable MCP integration, spec 2025-11-25, Streamable HTTP); deterministic engine code; `certification-requirement → how we meet it` README table; AWS Bedrock badge.
-VO: *"Deterministic detectors decide. Bedrock explains. Every action approved, every result verified, every outcome measured — and it learns which plans actually work."*
-
-## Close (2:50–3:00)
-*"Align. The agent that lives where you live — and keeps your life pointed at what you said matters."*
+## Recording checklist (before pressing record)
+1. `npm start` → open `http://localhost:3344/sim` in a clean browser window (hide bookmarks bar, 100% zoom, 1920×1080).
+2. Click **↺ Reset** once, then **reload the page** — pristine day one.
+3. Toggle ✅ voice replies ON. System volume up; capture desktop audio (OBS or Win+G Game Bar).
+4. Do one silent rehearsal run, then Reset + reload again and record.
+5. Record 1080p. Keep the mouse calm; move only to click.
 
 ---
 
-## Echo Dot (voice-only) proof clip — for the submission page
-Same Beat 1 by voice only: ≤5 spoken items, explicit "yes" before apply, no screen references. (Certification: voice-only parity.)
+## Cold open — 0:00–0:15
+**Visual:** the simulator loading; the proactive briefing appears *by itself*.
+**VO (you, or a caption):**
+> *"Every AI waits for a question. Align doesn't. It holds a model of your whole life — and speaks first when something matters."*
 
-## Honesty slide (also in README)
-Real: MCP server + engine + memory + verified execution + Bedrock reasoning. Simulated (labeled): the Alexa+ host — voice pipeline + proactive speech (no public add-on API for add-on-initiated turns → filed as feature request). Deferred: real calendar OAuth, multi-person Voice ID, finance advice (policy).
+## Beat 1 — It noticed, it connected, it asked — 0:15–0:55
+**Action:** let the proactive briefing play fully (TTS).
+**What the judges hear Align say, unprompted:** work crowding out family and personal goals *"— I'm not fully sure yet, but the pattern is there"* (uncertainty honesty), lowest balances, the rescheduled-4-times report, and ONE question: *"how are things with Sam lately?"*
+**What they see:** Life Balance bars (family 6, red), the cross-domain insight card, the question chip.
+**Caption overlay:** `Proactive · cross-domain · asks exactly one question`
+
+**Action:** type → `Honestly we barely talk, work is eating everything.` → send.
+**Align:** records it; reply invites "fix it".
+**Caption:** `Your answer became evidence — confidence rose, the hedge is gone`
+
+## Beat 2 — Correction → plan → approval → verified — 0:55–1:50
+**Action:** click chip **"Actually, I hate morning gym"**.
+**Align:** *"Preference saved — I'll plan around it from now on."*
+
+**Action:** click **"Fix it"**.
+**Align reads the plan:** workshop moved before Maya's recital, Date night Friday, **Gym at 18:00 — evenings, because you just said so**, two Spanish mornings, Call Mom Saturday. Trade-offs stated. *"This is an experiment — my hypothesis: … I'll measure it next week. Shall I apply it?"*
+**Caption:** `It planned around a preference it learned 10 seconds ago`
+
+**Action:** click **"Yes, do it"**.
+**What they see:** the APPLIED card — every change with a green ✓, **ALL CHANGES VERIFIED** (re-read from the calendar after writing).
+**Caption:** `Nothing executes without your yes · nothing is claimed without verification`
+
+## Beat 3 — It thinks ahead of you — 1:50–2:05
+**Action:** click chip **"What if I take a client dinner on Thursday at 7pm?"**
+**Align:** *"…it collides with School recital — Maya at 18:00… I'd look for a different slot — want me to find one?"*
+**Caption:** `The cost of a decision — computed BEFORE you make it`
+
+## Beat 4 — One week later: it measured itself — 2:05–2:35
+**Action:** click **⏭ One week later**.
+**Align, proactively:** *"Results from last week's plan: family went 0 to 1, health 1 to 3, personal 0 to 2 — all improved."* … and the **next** knowledge gap: *"you wanted $500 into the house fund — how did October go?"*
+**What they see:** MEASURED RESULTS card + Life Balance transformed (family 6 → 97).
+**Action:** click chip **"I put in 450"** → Align: *"Logged. You're $50 short of the $500 target."*
+**Caption:** `Hypothesis confirmed · outcomes retrain its probabilities · the agent is smarter this week than last`
+
+## Beat 5 — Under the hood — 2:35–2:50
+**Visual, fast cuts (pre-record separately):**
+1. README: the functional-requirements coverage table (2 s)
+2. **The same MCP server answering inside Claude** (4–5 s — proves a real, portable MCP integration, spec 2025-11-25, Streamable HTTP)
+3. `src/engine/` file tree + the objective-function block from the README (3 s)
+4. AWS: Bedrock + App Runner (architecture diagram) (3 s)
+**VO/caption:** *"A real MCP server — deterministic engine decides, Claude on Bedrock speaks. 42 automated tests. Sub-500-millisecond tools."*
+
+## Close — 2:50–3:00
+**Visual:** the Life Balance wheel, all green.
+**VO:**
+> *"Align. It studies your life, computes the best move, acts with your consent — and proves it worked. **Alexa, open Align.**"*
+
+---
+
+## Extra clips for the Devpost page (not in the 3:00)
+- **Echo Dot voice-only run:** toggle Echo Dot mode, run Beat 1–2 by audio alone (voice-only parity).
+- **Honesty note on screen whenever the host is shown:** the badge "SIMULATED ALEXA+ HOST" is already in the UI — don't crop it out. It's a feature of the submission, not a flaw.
