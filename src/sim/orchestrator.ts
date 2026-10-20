@@ -26,6 +26,8 @@ export interface SessionState {
   lastQuestionText: string | null;
   /** Content key of the last briefing delivered in this session (proactively or on request) — never read twice verbatim. */
   lastBriefingKey: string | null;
+  /** An offer Align made that a bare "yes" can accept (e.g. "want me to find a different slot?"). */
+  pendingOffer: { kind: "find_slot"; title: string; day: string; start_time: string } | null;
   lastInsightId: string | null;
   lastPlanId: string | null;
   planAwaitingApproval: boolean;
@@ -36,6 +38,7 @@ export const newSession = (): SessionState => ({
   lastQuestionId: null,
   lastQuestionText: null,
   lastBriefingKey: null,
+  pendingOffer: null,
   lastInsightId: null,
   lastPlanId: null,
   planAwaitingApproval: false,
@@ -60,6 +63,27 @@ export function absorb(state: SessionState, call: ToolCallRecord): void {
   }
   if (call.name === "apply_plan" && !call.isError) state.planAwaitingApproval = false;
   if (call.name === "check_in") state.lastQuestionId = null;
+  // "I'd look for a different slot — want me to find one?" must be honorable.
+  if (call.name === "simulate_change" && d.recommendation === "reschedule") {
+    const a = call.args as { title?: string; day?: string; start_time?: string };
+    if (a.title && a.day && a.start_time) state.pendingOffer = { kind: "find_slot", title: a.title, day: a.day, start_time: a.start_time };
+  } else if (call.name === "simulate_change") state.pendingOffer = null;
+}
+
+const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
+/** Honor the "find a different slot" offer with the same tool, one day at a time. */
+async function findSlot(offer: NonNullable<SessionState["pendingOffer"]>, calls: ToolCallRecord[], callTool: CallTool): Promise<string> {
+  const i = WEEKDAYS.findIndex((d) => d.toLowerCase() === offer.day.toLowerCase());
+  const order = i < 0 ? WEEKDAYS : [...WEEKDAYS.slice(i + 1), ...WEEKDAYS.slice(0, i)];
+  for (const day of order) {
+    const call = await callTool("simulate_change", { title: offer.title, day, start_time: offer.start_time });
+    calls.push(call);
+    if (!call.isError && call.data?.recommendation === "safe") {
+      return `${day} at ${offer.start_time} works for "${offer.title}" — no conflicts, and none of your goals lose their slot. Say "fix it" if you want it in a plan.`;
+    }
+  }
+  return `I checked every other day at ${offer.start_time}: each one collides with something or costs a goal its slot. I'd skip "${offer.title}" this week, or try a different time.`;
 }
 
 // ---------------------------------------------------------------- rules brain
@@ -145,6 +169,16 @@ async function rulesBrain(text: string, state: SessionState, callTool: CallTool)
     absorb(state, call);
     return say(call.text);
   }
+  // Accept or decline a pending offer before anything else reads the "yes".
+  if (state.pendingOffer && !state.planAwaitingApproval && (YES.test(text.trim()) || /^(find one|please do|go on)\b/i.test(text.trim()))) {
+    const offer = state.pendingOffer;
+    state.pendingOffer = null;
+    return say(await findSlot(offer, calls, callTool));
+  }
+  if (state.pendingOffer && !state.planAwaitingApproval && NO.test(text.trim())) {
+    state.pendingOffer = null;
+    return say("Okay, leaving it.");
+  }
   // Declining a proposed plan is a decision, not a memory: nothing is applied.
   if (state.planAwaitingApproval && NO.test(text.trim())) {
     state.planAwaitingApproval = false;
@@ -189,6 +223,15 @@ async function rulesBrain(text: string, state: SessionState, callTool: CallTool)
     calls.push(call);
     absorb(state, call);
     return say(`Forgotten: ${quote(matches[0]!.content)}.`);
+  }
+  // A wish or goal ("I want to…", "I'd like to…") is durable intent, not an
+  // answer to the open question and not a passing check-in: keep it, and
+  // point at the one thing Align can actually do about it.
+  if (/^(i (really |just )?(want|need|wish|would like|would love)|i'?d (like|love)|my goal is)\b/i.test(text.trim())) {
+    const call = await callTool("remember", { content: text, kind: "goal_note" });
+    calls.push(call);
+    absorb(state, call);
+    return say("That's a goal worth planning around — I've kept it. Say \"fix it\" and I'll look for protected time for it this week; nothing changes without your yes.");
   }
   // While Align's question is open, a sentence-length statement is the answer —
   // even if it happens to contain a route word ("…the kids' goals and my plan").

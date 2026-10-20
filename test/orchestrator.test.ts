@@ -280,3 +280,44 @@ describe("rules brain: a briefing is never read twice verbatim", () => {
     expect(out.reply).toMatch(/^Here's your briefing/);
   });
 });
+
+describe("rules brain: wishes are kept as goals; offers can be accepted", () => {
+  it("keeps 'I want to have a better relationship with my wife' as a goal note, not as the answer to the open question", async () => {
+    const log: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const s = newSession();
+    s.lastQuestionId = "q_1";
+    const out = await orchestrate("i want to have better relation with my wife", s, {
+      callTool: async (name, args) => { log.push({ name, args }); return { name, args, text: "Remembered as a goal_note.", data: {}, isError: false }; },
+    });
+    expect(log).toEqual([{ name: "remember", args: { content: "i want to have better relation with my wife", kind: "goal_note" } }]);
+    expect(out.reply).toMatch(/^That's a goal worth planning around/);
+    expect(s.lastQuestionId).toBe("q_1");
+  });
+
+  it("honors 'want me to find one?' — yes tries the other days with simulate_change and reports the first that fits", async () => {
+    const asked: string[] = [];
+    const callTool = async (name: string, args: Record<string, unknown>): Promise<ToolCallRecord> => {
+      asked.push(`${name}:${args.day}`);
+      const safe = args.day === "Saturday";
+      return { name, args, text: safe ? "fits" : "collides", data: { recommendation: safe ? "safe" : "reschedule" }, isError: false };
+    };
+    const s = newSession();
+    const first = await orchestrate("What if I take a client dinner on Thursday at 7pm?", s, { callTool });
+    expect(first.toolCalls[0]!.args).toEqual({ title: "client dinner", day: "Thursday", start_time: "19:00" });
+    expect(s.pendingOffer).toEqual({ kind: "find_slot", title: "client dinner", day: "Thursday", start_time: "19:00" });
+    const yes = await orchestrate("Yes", s, { callTool });
+    expect(asked).toEqual(["simulate_change:Thursday", "simulate_change:Friday", "simulate_change:Saturday"]);
+    expect(yes.reply).toBe('Saturday at 19:00 works for "client dinner" — no conflicts, and none of your goals lose their slot. Say "fix it" if you want it in a plan.');
+    expect(s.pendingOffer).toBeNull();
+  });
+
+  it("'no' declines the offer without any tool call", async () => {
+    const s = newSession();
+    s.pendingOffer = { kind: "find_slot", title: "client dinner", day: "Thursday", start_time: "19:00" };
+    const log: string[] = [];
+    const out = await orchestrate("No thanks", s, { callTool: stubCallTool(log) });
+    expect(out.reply).toBe("Okay, leaving it.");
+    expect(log).toEqual([]);
+    expect(s.pendingOffer).toBeNull();
+  });
+});
