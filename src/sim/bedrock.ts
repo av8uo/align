@@ -34,7 +34,11 @@ Rules:
 - Never execute apply_plan with approve=true unless the user's LAST message clearly consents (yes / do it / apply).
 - If the briefing included a question and the user's message answers it, record it with check_in (pass question_id).
 - Voice-only parity: never reference screens or buttons; read at most 5 items aloud.
-- No technical jargon, tool names, IDs, or JSON in your spoken reply.`;
+- No technical jargon, tool names, IDs, or JSON in your spoken reply.
+- Say ONLY what tool results contain. Never describe, promise, or imply a change the tools did not return.
+- You cannot edit a plan. apply_plan applies the latest proposal EXACTLY as propose_plan returned it. If the user wants something different, call propose_plan again (after remember/check_in for new preferences) and read the new plan — or say plainly what cannot be done.
+- "Fix it" / "make a plan" means: call propose_plan now and read its result. Never answer it from memory.
+- After apply_plan, report what it verified — nothing more.`;
 
 export interface McpToolDef {
   name: string;

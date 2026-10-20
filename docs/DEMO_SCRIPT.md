@@ -18,6 +18,8 @@
 
 ---
 
+> **Wording varies.** With the LLM host, Align phrases every reply itself from the tool results, so the quotes below are the *shape* of each beat, not a script to match. Each turn takes 4–9 s (the voice reply of the previous turn covers most of it) — wait for the reply before clicking the next chip.
+
 ## Cold open — 0:00–0:12
 **Visual:** the simulator loading; the proactive briefing appears *by itself*.
 **VO (you, or a caption):**
