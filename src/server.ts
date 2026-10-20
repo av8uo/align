@@ -456,7 +456,31 @@ export function createLifeOsHttpServer(db: DatabaseSync, today: string) {
         state.lastQuestionText = d.question?.text ?? state.lastQuestionText;
         state.lastBriefingKey = briefingKey(r.data as Record<string, unknown>);
         state.pendingOffer = null; // a new proactive turn supersedes any earlier offer
-        state.history.push({ role: "assistant", text: r.text });
+        // The CONTENT of the proactive turn is computed deterministically above.
+        // When an LLM host is configured, it phrases that content in its own
+        // words (as Alexa+ would) — nothing is added, the question is kept as is.
+        let spoken = r.text;
+        let phrasedBy: "host" | "template" = "template";
+        const configured = (bedrockBrain?.status() as { configured?: boolean } | undefined)?.configured !== false;
+        if (bedrockBrain && configured) {
+          try {
+            const out = await bedrockBrain(
+              `(Proactive turn — you are speaking first, unprompted. Say the following briefing in your own words, in 2–4 spoken sentences. Keep every fact and number, keep the hedge if there is one, and end with the question exactly as written if there is one. Do not call tools, do not greet with "Here's your briefing", do not add anything that is not below.)
+
+${r.text}`,
+              state,
+              callTool,
+            );
+            if (out.reply && out.toolCalls.length === 0 && out.brain !== "rules") {
+              spoken = out.reply;
+              phrasedBy = "host";
+            }
+          } catch {
+            /* the computed text is the fallback */
+          }
+        }
+        state.history.push({ role: "assistant", text: spoken });
+        return json(res, 200, { quiet: false, text: spoken, data: { ...r.data, phrased_by: phrasedBy, computed_text: r.text } });
       }
       return json(res, 200, { quiet: r.data.quiet === true, text: r.text, data: r.data });
     }
