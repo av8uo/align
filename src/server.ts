@@ -17,7 +17,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { openDb, migrate } from "./db/schema.js";
 import { seed, DEMO_TODAY } from "./db/seed.js";
 import * as impl from "./tools/impl.js";
-import { orchestrate, newSession, type SessionState, type ToolCallRecord } from "./sim/orchestrator.js";
+import { briefingKey, orchestrate, newSession, type SessionState, type ToolCallRecord } from "./sim/orchestrator.js";
 import { makeBedrockBrain } from "./sim/bedrock.js";
 import { runEngine } from "./engine/engine.js";
 import { addDays } from "./engine/time.js";
@@ -414,7 +414,7 @@ export function createLifeOsHttpServer(db: DatabaseSync, today: string) {
         state.lastInsightId = d.insights?.[0]?.id ?? state.lastInsightId;
         state.lastQuestionId = d.question?.id ?? state.lastQuestionId;
         state.lastQuestionText = d.question?.text ?? state.lastQuestionText;
-        state.lastBriefingText = r.text;
+        state.lastBriefingKey = briefingKey(r.data as Record<string, unknown>);
         state.history.push({ role: "assistant", text: r.text });
       }
       return json(res, 200, { quiet: r.data.quiet === true, text: r.text, data: r.data });

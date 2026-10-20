@@ -4,7 +4,7 @@
  * back to the deterministic rules brain — the demo can never die on stage.
  */
 import { describe, it, expect } from "vitest";
-import { orchestrate, newSession, type ToolCallRecord } from "../src/sim/orchestrator.js";
+import { briefingKey, orchestrate, newSession, type ToolCallRecord } from "../src/sim/orchestrator.js";
 
 const stubCallTool = (log: string[]) => async (name: string, args: Record<string, unknown>): Promise<ToolCallRecord> => {
   log.push(name);
@@ -268,14 +268,14 @@ describe("rules brain: a briefing is never read twice verbatim", () => {
 
   it("treats the proactive briefing as already delivered", async () => {
     const s = newSession();
-    s.lastBriefingText = "Here's your briefing. Work is crowding out your family time. Lowest balance: family at 6.";
+    s.lastBriefingKey = briefingKey({ headline: "Work is crowding out your family time", balance: [{ domain: "work", score: 68 }, { domain: "family", score: 6 }, { domain: "personal", score: 11 }, { domain: "finance", score: null }], insights: [{ id: "ins_1" }], outcomes: [] });
     const out = await orchestrate("How's my week looking?", s, { callTool: briefing });
     expect(out.reply).toMatch(/^Nothing new since my last briefing/);
   });
 
   it("reads a changed briefing in full (e.g. after the week-later jump)", async () => {
     const s = newSession();
-    s.lastBriefingText = "an older briefing";
+    s.lastBriefingKey = briefingKey({ headline: "an older briefing", insights: [{ id: "ins_0" }], balance: [], outcomes: [] });
     const out = await orchestrate("How's my week looking?", s, { callTool: briefing });
     expect(out.reply).toMatch(/^Here's your briefing/);
   });
