@@ -15,7 +15,8 @@ import { whatWouldHelp, dailyPlanOffer, kvGet } from "../src/engine/advice.js";
 import { getDailyBriefing, checkIn } from "../src/tools/impl.js";
 import { createLifeOsHttpServer } from "../src/server.js";
 import { addDays } from "../src/engine/time.js";
-import { proactiveInstruction } from "../src/sim/context.js";
+import { proactiveInstruction, buildContext, renderContext } from "../src/sim/context.js";
+import { newSession } from "../src/sim/orchestrator.js";
 
 const fresh = () => { const db = new DatabaseSync(":memory:"); migrate(db); seed(db); runEngine(db, DEMO_TODAY); return db; };
 const balanceOf = (db: DatabaseSync) => lifeBalance(loadCtx(db, DEMO_TODAY));
@@ -89,6 +90,19 @@ describe("proactive instruction to the host model", () => {
     expect(instruction).toContain(b.text); // the computed briefing travels with it, unchanged
     // Without help lines, no step block is injected.
     expect(proactiveInstruction("Here's your briefing.", [])).not.toContain("next steps come from the engine");
+  });
+});
+
+describe("next steps in the per-turn context", () => {
+  it("the host context carries the engine's next steps with their evidence basis", () => {
+    const db = fresh();
+    const ctx = buildContext(db, newSession(), "how am I doing?", DEMO_TODAY);
+    expect(ctx.nextSteps.length).toBe(2);
+    expect(ctx.nextSteps.map((n) => n.domain)).toEqual(["finance", "family"]);
+    const rendered = renderContext(ctx);
+    expect(rendered).toContain("Best next steps right now");
+    expect(rendered).toContain("[missing]");
+    expect(rendered).toContain("[confirmed]");
   });
 });
 

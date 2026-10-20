@@ -19,7 +19,7 @@
   .badge.pro { background: #10303a; color: var(--blue); border: 1px solid #1d4a5c; }
   #replay.pulse { animation: pulse 1.2s ease-in-out infinite; }
   .insight small.evidence { display: block; margin-top: 3px; color: var(--blue); opacity: .85; }
-  .row.changed .val { color: var(--blue); font-weight: 700; animation: flash 1.6s ease-out; }
+  .row.changed .val { font-weight: 700; }
   @keyframes flash { 0% { background: rgba(94, 200, 255, .25); } 100% { background: transparent; } }
   @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(94, 200, 255, .6); } 50% { box-shadow: 0 0 0 8px rgba(94, 200, 255, 0); } }
 
@@ -38,13 +38,22 @@
   .caption .who { color: var(--blue); font-weight: 600; margin-right: 6px; }
   .stand { width: 120px; height: 10px; margin: 14px auto 0; background: #15181d; border-radius: 0 0 10px 10px; }
 
-  .card { background: var(--panel); border: 1px solid #232832; border-radius: var(--radius); padding: 14px; }
+  .card { background: linear-gradient(180deg, #161b22, #12161c); border: 1px solid #242a34; border-radius: var(--radius); padding: 14px; box-shadow: 0 6px 18px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.03); }
   .card h3 { font-size: 13px; color: var(--dim); text-transform: uppercase; letter-spacing: .6px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
   .row { display: flex; align-items: center; gap: 10px; padding: 5px 0; }
   .dom { width: 86px; color: var(--dim); font-size: 13px; text-transform: capitalize; }
-  .bar { flex: 1; height: 9px; border-radius: 5px; background: #0f141b; overflow: hidden; }
-  .bar i { display: block; height: 100%; border-radius: 5px; transition: width .7s ease; }
-  .val { width: 64px; text-align: right; font-variant-numeric: tabular-nums; font-size: 13px; }
+  .bar { flex: 1; height: 11px; border-radius: 6px; background: #0c1016; overflow: hidden; box-shadow: inset 0 1px 2px rgba(0,0,0,.6); }
+  /* The "liquid": a gradient fill that slides to its new level and fades to its new colour. */
+  .bar i { display: block; height: 100%; border-radius: 6px; position: relative;
+    transition: width 1.15s cubic-bezier(.22,.61,.36,1), background-color 1.15s ease, box-shadow 1.15s ease; }
+  .bar i::after { content: ""; position: absolute; inset: 0; border-radius: 6px;
+    background: linear-gradient(180deg, rgba(255,255,255,.28), rgba(255,255,255,0) 55%, rgba(0,0,0,.18)); }
+  .bar i.good { background-color: var(--good); box-shadow: 0 0 10px rgba(57,196,127,.35); }
+  .bar i.warn { background-color: var(--warn); box-shadow: 0 0 10px rgba(245,166,35,.35); }
+  .bar i.bad  { background-color: var(--bad);  box-shadow: 0 0 10px rgba(240,93,93,.35); }
+  .bar i.none { background-color: #39424f; box-shadow: none; }
+  .val { width: 64px; text-align: right; font-variant-numeric: tabular-nums; font-size: 13.5px; font-weight: 600; transition: color .4s ease; }
+  .val.rising { color: var(--good); } .val.falling { color: var(--bad); }
   .trend { width: 16px; text-align: center; }
 
   .insight { border-left: 3px solid var(--warn); padding-left: 10px; margin: 7px 0; }
@@ -60,14 +69,16 @@
   /* ------- right: conversation ------- */
   .side { display: flex; flex-direction: column; gap: 12px; }
   .log { background: var(--panel); border: 1px solid #232832; border-radius: var(--radius); padding: 14px; flex: 1; min-height: 300px; max-height: 430px; overflow-y: auto; display: flex; flex-direction: column; gap: 9px; }
-  .msg { max-width: 92%; padding: 8px 12px; border-radius: 12px; font-size: 14px; }
-  .msg.user { align-self: flex-end; background: #16324a; }
-  .msg.alexa { align-self: flex-start; background: var(--panel2); }
+  .msg { max-width: 92%; padding: 9px 13px; border-radius: 14px; font-size: 14px; line-height: 1.45; box-shadow: 0 2px 8px rgba(0,0,0,.2); }
+  .msg.user { align-self: flex-end; background: linear-gradient(180deg, #1a3a55, #16324a); border-bottom-right-radius: 5px; }
+  .msg.alexa { align-self: flex-start; background: linear-gradient(180deg, #1e242d, #1a1f27); border-bottom-left-radius: 5px; }
   .msg .tools { margin-top: 5px; color: var(--dim); font-size: 11.5px; }
   .inputrow { display: flex; gap: 8px; }
   input[type=text] { flex: 1; background: var(--panel); color: var(--text); border: 1px solid #2a2f3a; border-radius: 10px; padding: 11px 13px; font-size: 14px; }
   button { background: var(--panel2); color: var(--text); border: 1px solid #2c3340; border-radius: 10px; padding: 10px 14px; cursor: pointer; font-size: 14px; }
-  button:hover { border-color: var(--blue); }
+  button:hover { border-color: var(--blue); background: #1f2631; }
+  button:active { transform: translateY(1px); }
+  input[type=text]:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(55,160,244,.18); }
   button.mic.on { background: #16324a; border-color: var(--blue); }
   .chips { display: flex; flex-wrap: wrap; gap: 7px; }
   .chips button { font-size: 12.5px; padding: 6px 11px; border-radius: 999px; }
@@ -141,28 +152,67 @@ const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">"
 const color = (s) => (s === null ? "#39424f" : s >= 70 ? "var(--good)" : s >= 40 ? "var(--warn)" : "var(--bad)");
 const arrow = { up: "▲", down: "▼", flat: "–" };
 
-let prevScores = {};
+const tone = (sc) => (sc === null ? "none" : sc >= 70 ? "good" : sc >= 40 ? "warn" : "bad");
+const trendColor = (t) => (t === "up" ? "var(--good)" : t === "down" ? "var(--bad)" : "var(--dim)");
 function balanceCard(balance) {
   const rows = balance.map((b) => `
-    <div class="row${prevScores[b.domain] !== undefined && prevScores[b.domain] !== b.score ? " changed" : ""}">
+    <div class="row" data-domain="${esc(b.domain)}">
       <span class="dom">${esc(b.domain)}</span>
-      <span class="bar"><i style="width:${b.score ?? 4}%; background:${color(b.score)}"></i></span>
-      <span class="val">${b.score === null ? "—" : b.score}</span>
-      <span class="trend" style="color:${b.trend === "up" ? "var(--good)" : b.trend === "down" ? "var(--bad)" : "var(--dim)"}">${arrow[b.trend] ?? "–"}</span>
+      <span class="bar"><i class="${tone(b.score)}" style="width:${b.score ?? 4}%"></i></span>
+      <span class="val" data-score="${b.score === null ? "" : b.score}">${b.score === null ? "—" : b.score}</span>
+      <span class="trend" style="color:${trendColor(b.trend)}">${arrow[b.trend] ?? "–"}</span>
     </div>`).join("");
-  balance.forEach((b) => { prevScores[b.domain] = b.score; });
   return `<div class="card" id="balance"><h3>Life balance <span class="dimtxt">this week · live</span></h3>${rows}</div>`;
+}
+// Numbers count up or down one by one (12, 13, 14…) while the bar slides.
+function countTo(el, from, to) {
+  if (from === to) { el.textContent = String(to); return; }
+  const steps = Math.abs(to - from);
+  const dur = Math.min(1100, 180 + steps * 28);
+  const t0 = performance.now();
+  el.classList.remove("rising", "falling");
+  el.classList.add(to > from ? "rising" : "falling");
+  const tick = (now) => {
+    const k = Math.min(1, (now - t0) / dur);
+    const eased = 1 - Math.pow(1 - k, 3);
+    el.textContent = String(Math.round(from + (to - from) * eased));
+    if (k < 1) requestAnimationFrame(tick);
+    else setTimeout(() => el.classList.remove("rising", "falling"), 900);
+  };
+  requestAnimationFrame(tick);
+}
+// Apply fresh scores to the existing card so CSS transitions animate the change.
+function applyBalance(balance) {
+  const card = $("balance");
+  if (!card) {
+    const holder = document.createElement("div");
+    holder.innerHTML = balanceCard(balance);
+    $("content").prepend(holder.firstElementChild);
+    return;
+  }
+  for (const b of balance) {
+    const row = card.querySelector(`.row[data-domain="${b.domain}"]`);
+    if (!row) continue;
+    const fill = row.querySelector(".bar i");
+    const val = row.querySelector(".val");
+    const trend = row.querySelector(".trend");
+    const prev = val.dataset.score === "" ? null : Number(val.dataset.score);
+    fill.className = tone(b.score);
+    fill.style.width = `${b.score ?? 4}%`;
+    if (b.score === null) val.textContent = "—";
+    else if (prev === null) val.textContent = String(b.score);
+    else countTo(val, prev, b.score);
+    val.dataset.score = b.score === null ? "" : String(b.score);
+    trend.style.color = trendColor(b.trend);
+    trend.textContent = arrow[b.trend] ?? "–";
+  }
 }
 // Refresh the widget after every turn: check-ins ("I skipped gym Friday"),
 // completions and applied plans change the scores the engine computes.
 async function refreshBalance() {
   try {
     const d = await fetch("/balance").then((x) => x.json());
-    const card = document.createElement("div");
-    card.innerHTML = balanceCard(d.balance || []);
-    const existing = $("balance");
-    if (existing) existing.replaceWith(card.firstElementChild);
-    else $("content").prepend(card.firstElementChild);
+    applyBalance(d.balance || []);
   } catch { /* server unreachable: keep the last widget */ }
 }
 // "Evidence: 4 events · 2 goals · 1 thing you said · 1 alternative explanation" — the basis, visible.
@@ -230,9 +280,9 @@ function render(toolCalls, proactiveData) {
   for (const [name, d] of datas) {
     if (name === "get_daily_briefing") {
       if ((d.outcomes || []).length) html.push(outcomesCard(d));
-      html.push(balanceCard(d.balance || []), insightsCard(d.insights || [], d.question));
+      html.push($("balance") ? $("balance").outerHTML : balanceCard(d.balance || []), insightsCard(d.insights || [], d.question));
     }
-    else if (name === "get_life_balance") html.push(balanceCard(d.balance || []));
+    else if (name === "get_life_balance") html.push($("balance") ? $("balance").outerHTML : balanceCard(d.balance || []));
     else if (name === "get_insight") html.push(insightsCard([{ title: d.title, severity: d.severity, domains: d.domains || [], confidence: d.confidence, evidence_summary: d.evidence_summary }], null));
     else if (name === "propose_plan") html.push(planCard(d));
     else if (name === "apply_plan") html.push(appliedCard(d));

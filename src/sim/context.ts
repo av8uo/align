@@ -8,6 +8,9 @@ import type { DatabaseSync } from "node:sqlite";
 import type { SessionState } from "./orchestrator.js";
 import { parsePreference, impliedTime } from "../engine/preferences.js";
 import { goalActual } from "../engine/detectors.js";
+import { lifeBalance } from "../engine/balance.js";
+import { whatWouldHelp } from "../engine/advice.js";
+import { loadCtx } from "../engine/engine.js";
 import type { EventRow, GoalRow } from "../core/types.js";
 import { addDays } from "../engine/time.js";
 
@@ -24,6 +27,8 @@ export interface TurnContext {
   recentPlans: Array<{ id: string; status: string }>;
   recentTopics: string[];
   offeredPlan: boolean;
+  /** Engine-derived next steps for the weakest areas (grounded; the host leads with these). */
+  nextSteps: Array<{ domain: string; line: string; basis: string }>;
   text: string;
 }
 
@@ -74,7 +79,11 @@ export function buildContext(db: DatabaseSync, state: SessionState, text: string
   const recentPlans = (db.prepare("SELECT id, status FROM plans ORDER BY rowid DESC LIMIT 3").all() as Array<{ id: string; status: string }>);
   const recentTopics = state.history.filter((h) => h.role === "user").slice(-3).map((h) => h.text.slice(0, 80));
   const offeredPlan = state.history.some((h) => h.role === "assistant" && /\b(fix it|a plan|put together a plan|draft a plan)\b/i.test(h.text));
-  return { facts, preferences, superseded, goals, commitments, openQuestion, recentQuestions, hypotheses, pendingPlan, recentPlans, recentTopics, offeredPlan, text };
+  let nextSteps: TurnContext["nextSteps"] = [];
+  try {
+    nextSteps = whatWouldHelp(db, today, lifeBalance(loadCtx(db, today, personId)), 2, personId).map((h) => ({ domain: h.domain, line: h.line, basis: h.basis }));
+  } catch { /* advice is optional context */ }
+  return { facts, preferences, superseded, goals, commitments, openQuestion, recentQuestions, hypotheses, pendingPlan, recentPlans, recentTopics, offeredPlan, nextSteps, text };
 }
 
 /**
@@ -101,6 +110,7 @@ export function renderContext(c: TurnContext): string {
   if (c.superseded.length) lines.push(`Superseded (older belief → current): ${c.superseded.map((s) => `"${s.old}" → "${s.by}"`).join("; ")}.`);
   if (c.goals.length) lines.push(`Goals (last week): ${c.goals.map((g) => `${g.title} ${g.domain === "finance" ? "" : `${g.lastWeek}/${g.target}`}`.trim()).join("; ")}.`);
   if (c.commitments.length) lines.push(`Commitments / wants: ${c.commitments.join("; ")}.`);
+  if (c.nextSteps.length) lines.push(`Best next steps right now (engine-derived, evidence-based — lead with these when the user talks about their life): ${c.nextSteps.map((n) => `${n.line} [${n.basis}]`).join(" | ")}`);
   if (c.hypotheses.length) lines.push(`Current insights: ${c.hypotheses.map((h) => `${h.title} (confidence ${h.confidence.toFixed(2)}${h.confidence < 0.75 ? ", still a working read" : ""})`).join("; ")}.`);
   if (c.openQuestion) lines.push(`Open question you already asked (don't repeat it verbatim; if the user answers, pass question_id=${c.openQuestion.id} to check_in): "${c.openQuestion.text}"${c.openQuestion.decides ? ` — it decides ${c.openQuestion.decides}` : ""}.`);
   else lines.push("No open question. Do not invent one; at most one focused follow-up if it would change what you do.");
