@@ -15,6 +15,7 @@ export const TABLES = [
   "outcomes",
   "goal_logs",
   "engine_runs",
+  "kv",
 ] as const;
 
 const DDL = `
@@ -140,6 +141,12 @@ CREATE TABLE IF NOT EXISTS engine_runs (
   id TEXT PRIMARY KEY,
   ran_at TEXT NOT NULL,
   summary TEXT
+);
+
+-- Small durable settings (e.g. the day a plan was last offered). Additive: created if absent.
+CREATE TABLE IF NOT EXISTS kv (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
 );
 `;
 

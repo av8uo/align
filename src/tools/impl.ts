@@ -16,6 +16,7 @@ import { recordCompletions, recordRejection, type Change, type CompletionReport 
 import { addDays, fromMs, overlaps, toMs, weekdayOf } from "../engine/time.js";
 import { runDetectors } from "../engine/detectors.js";
 import { parsePreference, relatePreferences } from "../engine/preferences.js";
+import { whatWouldHelp, dailyPlanOffer } from "../engine/advice.js";
 
 const WD = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const when = (iso: string) => `${WD[weekdayOf(iso)]} ${iso.slice(11, 16)}`;
@@ -145,6 +146,10 @@ export function getDailyBriefing(db: DatabaseSync, today: string): ToolResult {
     .slice(0, 2)
     .map((b) => `${b.domain} at ${b.score}`);
   const balanceLine = low.length ? `Lowest balance: ${low.join(", ")}.` : "Your balance looks strong across the board.";
+  // One grounded "what would help" line per weakest area, then at most one plan offer per day.
+  const help = whatWouldHelp(db, today, balance, 2);
+  const helpLine = help.length ? `What would help: ${help.map((h) => h.line.replace(/\.$/, "")).join("; ")}.` : "";
+  const offer = insights[0] ? dailyPlanOffer(db, today) : "";
 
   const headline = insights[0]?.title ?? "All domains look on track";
   const text = [
@@ -153,6 +158,8 @@ export function getDailyBriefing(db: DatabaseSync, today: string): ToolResult {
     balanceLine,
     alsoTitle ? `Also: ${alsoTitle}.` : "",
     streakLine,
+    helpLine,
+    offer,
     q ? q.text : "",
   ]
     .filter(Boolean)
@@ -175,6 +182,8 @@ export function getDailyBriefing(db: DatabaseSync, today: string): ToolResult {
       question: q ?? null,
       outcomes,
       streaks,
+      help,
+      plan_offered: offer !== "",
     },
   };
 }

@@ -20,7 +20,7 @@ import * as impl from "./tools/impl.js";
 import { briefingKey, orchestrate, newSession, type SessionState, type ToolCallRecord } from "./sim/orchestrator.js";
 import { makeBedrockBrain } from "./sim/bedrock.js";
 import { makeAnthropicBrain } from "./sim/anthropic.js";
-import { buildContext, renderContext } from "./sim/context.js";
+import { buildContext, renderContext, proactiveInstruction } from "./sim/context.js";
 import { runEngine } from "./engine/engine.js";
 import { addDays } from "./engine/time.js";
 
@@ -91,6 +91,8 @@ export function buildMcpServer(db: DatabaseSync, today: string): McpServer {
         balance: zBalance,
         insights: z.array(zInsightSummary),
         question: z.object({ id: z.string(), text: z.string() }).nullable(),
+        help: z.array(z.object({ domain: z.string(), line: z.string(), basis: z.enum(["confirmed", "scheduled", "missing"]), goal_id: z.string().optional() })).optional(),
+        plan_offered: z.boolean().optional(),
         outcomes: z
           .array(z.object({ metric: z.string(), baseline: z.number().nullable(), observed: z.number(), verdict: z.string(), scheduled: z.number().optional(), confirmed: z.number().optional(), unknown: z.number().optional() }))
           .optional(),
@@ -465,9 +467,7 @@ export function createLifeOsHttpServer(db: DatabaseSync, today: string) {
         if (bedrockBrain && configured) {
           try {
             const out = await bedrockBrain(
-              `(Proactive turn — you are speaking first, unprompted. Say the following briefing in your own words, in 2–4 spoken sentences. Keep every fact and number, keep the hedge if there is one, and end with the question exactly as written if there is one. Do not call tools, do not greet with "Here's your briefing", do not add anything that is not below.)
-
-${r.text}`,
+              proactiveInstruction(r.text, (r.data as { help?: Array<{ line: string }> }).help ?? []),
               state,
               callTool,
             );

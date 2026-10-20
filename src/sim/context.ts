@@ -77,6 +77,22 @@ export function buildContext(db: DatabaseSync, state: SessionState, text: string
   return { facts, preferences, superseded, goals, commitments, openQuestion, recentQuestions, hypotheses, pendingPlan, recentPlans, recentTopics, offeredPlan, text };
 }
 
+/**
+ * Instruction for the proactive turn: the host may rephrase and shorten the
+ * briefing, but every engine-supplied "What would help" step is listed and must
+ * be kept with its evidence, and no advice may be added.
+ */
+export function proactiveInstruction(computedText: string, help: Array<{ line: string }> = []): string {
+  const steps = help.length
+    ? `\n\nThese next steps come from the engine's evidence. Keep EACH of them, with its numbers and its specific step (the slot, the ask), in your own words but not weakened or dropped:\n${help.map((h) => `- ${h.line}`).join("\n")}`
+    : "";
+  return (
+    `(Proactive turn — you are speaking first, unprompted. Say the following briefing in your own words, in 2–5 spoken sentences. Keep every fact and number, keep the hedge if there is one, and end with the question exactly as written if there is one. Do not call tools, do not greet with "Here's your briefing", and do not add any advice or step that is not listed below.)` +
+    steps +
+    `\n\nBriefing:\n${computedText}`
+  );
+}
+
 /** Compact, attributable rendering for the host model (a few hundred tokens, not a memory dump). */
 export function renderContext(c: TurnContext): string {
   const lines: string[] = ["CONTEXT (from Align's records — cite, don't re-save, don't re-ask):"];
