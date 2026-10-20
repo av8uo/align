@@ -10,15 +10,15 @@ import { newId } from "../core/ids.js";
 import { runDetectors, type Ctx } from "./detectors.js";
 import { lifeBalance, g3AttentionDrift, type DomainScore } from "./balance.js";
 import { correlate, upsertInsights } from "./correlate.js";
-import { pickQuestion } from "./inquiry.js";
+import { discoverGaps, pickQuestion, syncGaps } from "./gaps.js";
 import { measureOutcomes } from "./learn.js";
 
 export interface EngineSummary {
   ranAt: string;
   insightIds: string[];
   balance: DomainScore[];
-  question: { id: string; gapId: string; text: string; score: number } | null;
-  outcomesMeasured: Array<{ metric: string; verdict: string }>;
+  question: { id: string; gapId: string; text: string; score: number; reason: string } | null;
+  outcomesMeasured: Array<{ metric: string; verdict: string; unknown: number }>;
 }
 
 export function loadCtx(db: DatabaseSync, today: string, personId = "alex"): Ctx {
@@ -45,7 +45,11 @@ export function runEngine(db: DatabaseSync, today: string, personId = "alex"): E
   const findings = [...runDetectors(ctx), ...g3AttentionDrift(ctx, balance)];
   const insightIds = upsertInsights(db, correlate(ctx, findings), now);
   const outcomesMeasured = measureOutcomes(db, today);
-  const question = pickQuestion(db, ctx, personId);
+  // Knowledge gaps are discovered from the rows just analysed (incl. unconfirmed
+  // plan events and unmeasured outcomes), then at most one question is chosen.
+  const gaps = discoverGaps(db, loadCtx(db, today, personId));
+  syncGaps(db, gaps, now, personId);
+  const question = pickQuestion(db, gaps, today, personId);
 
   db.prepare("INSERT INTO engine_runs (id, ran_at, summary) VALUES (?, ?, ?)").run(
     newId("run"),

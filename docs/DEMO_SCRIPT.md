@@ -53,21 +53,24 @@
 **Align:** *"…it collides with School recital — Maya at 18:00… I'd look for a different slot — want me to find one?"*
 **Caption:** `The cost of a decision — computed BEFORE you make it`
 
-## Beat 4 — One week later: it measured itself — 2:00–2:30
+## Beat 4 — One week later: it refuses to guess, then measures — 2:00–2:35
 **Action:** click **⏭ One week later**.
-**Align, proactively:** *"Results from last week's plan: family went 0 to 1, health 1 to 3, personal 0 to 2 — all improved."* … then the **next** knowledge gap: *"you wanted $500 into the house fund — how did October go?"*
-**What they see:** MEASURED RESULTS card + Life Balance transformed.
-**Action:** click chip **"I put in 450"** → Align: *"Logged. You're $50 short of the $500 target."*
-**Caption:** `Hypothesis confirmed · outcomes retrain its probabilities · smarter this week than last`
+**Align, proactively:** *"Last week's plan put 8 sessions on your calendar; I can't tell yet whether they happened. … Did date night with Sam happen on Friday?"*
+**Caption:** `Scheduled ≠ done · it asks instead of assuming`
+**Action:** type → `Yes, we did!` → Align records it and says family improved; gym, Spanish, Mom still unconfirmed.
+**Action:** type → `I went to the gym twice` → two sessions recorded as done, gym improved (1 → 2 confirmed).
+**Action:** click chip **"How did my week go?"** → *"Confirmed so far: date night 0 to 1, gym 1 to 2 of 3 (improved). Still unknown: Spanish, call Mom… I can't prove the plan caused it, but it's the evidence I'll plan from."*
+**What they see:** MEASURED RESULTS card labeled *confirmed evidence only*, with unconfirmed counts.
+**Caption:** `Only confirmed evidence counts · unknown is never success · the next plan ranks by what actually got done`
 
 ## Beat 5 — Under the hood, honestly — 2:30–2:50
 **Visual, fast cuts (pre-record separately, 4–5 s each):**
-1. Terminal: `npm test` → **85 tests, 9 suites, all green** (engine, MCP wire, proactive quiet rule, Bedrock circuit breaker).
+1. Terminal: `npm test` → **109 tests, 10 suites, all green** (engine, MCP wire, proactive quiet rule, host brains, intelligence evaluation).
 2. Terminal: `curl -X POST localhost:3344/mcp … tools/list` → the 13 tools in JSON — *the real Streamable HTTP endpoint*. (If you also show the server inside another MCP client, show only its tool list in a terminal/inspector — no third-party logos.)
 3. README: the functional-requirements coverage table and the **real / simulated / deferred** honesty table.
 4. `src/engine/` file tree + the objective-function block.
 **VO:**
-> *"A real MCP server — a deterministic engine decides, a language model only speaks, through these thirteen tools. The same host loop runs on Amazon Bedrock for the AWS path; it's quota-throttled on our new account today, so a deterministic fallback stands behind every turn — by design, the demo never depends on the cloud. Eighty-five automated tests. Tools answer in under five milliseconds."*
+> *"A real MCP server — a deterministic engine decides, a language model only speaks, through these thirteen tools. The same host loop runs on Amazon Bedrock for the AWS path; it's quota-throttled on our new account today, so a deterministic fallback stands behind every turn — by design, the demo never depends on the cloud. A hundred and nine automated tests, including an evaluation suite for the intelligence itself. Tools answer in under five milliseconds."*
 **Caption:** `Implemented: MCP server, engine, learning loop · Simulated: Alexa+ host · Deferred: Bedrock voice (quota), hosted deploy (cost)`
 
 ## Close — 2:50–3:00

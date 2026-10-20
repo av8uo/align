@@ -158,9 +158,13 @@ function appliedCard(d) {
   return `<div class="card"><h3>Applied <span class="${d.allVerified ? "ok" : ""}">${d.allVerified ? "all changes verified" : "partial"}</span></h3>${rows}</div>`;
 }
 function outcomesCard(d) {
-  const rows = (d.outcomes || []).map((o) => `<div class="change"><span class="op ${o.verdict === "improved" ? "add" : "move"}">${o.verdict === "improved" ? "✓" : "•"}</span>
-    <span>${esc(o.metric.replace("_adherence", ""))}: ${o.baseline} → ${o.observed} <span class="dimtxt">(${esc(o.verdict)})</span></span></div>`).join("");
-  return `<div class="card"><h3>Measured results</h3>${rows || '<span class="dimtxt">Nothing measured yet.</span>'}</div>`;
+  const rows = (d.outcomes || []).map((o) => {
+    const unknown = o.unknown ? ` · ${o.unknown} unconfirmed` : "";
+    const mark = o.verdict === "improved" ? "✓" : o.verdict === "inconclusive" ? "?" : "•";
+    return `<div class="change"><span class="op ${o.verdict === "improved" ? "add" : "move"}">${mark}</span>
+    <span>${esc(o.metric.replace("_adherence", ""))}: ${o.baseline === null ? "no baseline" : o.baseline} → ${o.confirmed ?? o.observed} confirmed of ${o.scheduled ?? "?"} scheduled <span class="dimtxt">(${esc(o.verdict)}${unknown})</span></span></div>`;
+  }).join("");
+  return `<div class="card"><h3>Measured results <span class="badge pro">confirmed evidence only</span></h3>${rows || '<span class="dimtxt">Nothing measured yet.</span>'}</div>`;
 }
 function goalsCard(d) {
   const rows = (d.goals || []).map((g) => `

@@ -10,7 +10,12 @@
  *  - G3 attention drift: stated ranking puts marriage/family first; time says work
  *  - G4 evening creep: 4 work events past 18:30 last week
  *  - G5 postponement: "Quarterly report" rescheduled 4 times
- *  - G6 stale domains: marriage satisfaction & finance progress have no fresh data
+ *  - G6 trend/staleness: weekly adherence declines over 3 weeks; friends domain has no fresh signal
+ *
+ * Completion evidence: the fixture asserts that every PAST seeded event happened
+ * (completion='done', source='seed') — that is the persona's imported history,
+ * not an inference. This week's events are 'scheduled'. Plan-created events
+ * start 'scheduled' and only become 'done'/'missed' through a user check-in.
  *  - G7 finance pacing: $500/mo house-fund goal, October progress unknown
  *  - G8 forward scan: THIS week has 0 gym/Spanish/date slots + a Thu collision
  *    (Client workshop 17:00–18:30 vs School recital 18:00–19:30)
@@ -93,11 +98,13 @@ export function seed(db: DatabaseSync): void {
   );
 
   const insEv = db.prepare(
-    `INSERT INTO events (id, person_id, title, start, end, domain, flexible, source, reschedule_count)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 'seed', ?)`,
+    `INSERT INTO events (id, person_id, title, start, end, domain, flexible, source, reschedule_count, completion, completion_source, completed_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'seed', ?, ?, ?, ?)`,
   );
   for (const [title, domain, off, sh, sm, eh, em, flex = 0, resched = 0] of EVENTS) {
-    insEv.run(id("evt"), PERSON_ID, title, dayAt(off, sh, sm), dayAt(off, eh, em), domain, flex, resched);
+    const past = off < 0;
+    insEv.run(id("evt"), PERSON_ID, title, dayAt(off, sh, sm), dayAt(off, eh, em), domain, flex, resched,
+      past ? "done" : "scheduled", past ? "seed" : null, past ? dayAt(off, eh, em) : null);
   }
 
   const insGoal = db.prepare(
@@ -130,13 +137,12 @@ export function seed(db: DatabaseSync): void {
   // From an answered question 10 days ago (shows cooldown + answer→memory linkage):
   mem("experience", "Had dinner with Omar last week; wants to see friends more often.", 0.9, "q_001", dayAt(-10, 19, 0));
 
-  const insGap = db.prepare(
-    `INSERT INTO knowledge_gaps (id, person_id, topic, domain, blocked_insight_id, confidence, sensitive, last_asked_at, declines)
-     VALUES (?, ?, ?, ?, NULL, ?, ?, ?, 0)`,
-  );
-  insGap.run("gap_marriage", PERSON_ID, "How things are going with Sam (time together, satisfaction)", "family", 0.2, 0, null);
-  insGap.run("gap_finance_oct", PERSON_ID, "October progress on the house fund", "finance", 0.1, 0, null);
-  insGap.run("gap_friends", PERSON_ID, "Time with friends lately", "personal", 0.6, 0, dayAt(-10, 18, 0));
+  // Knowledge gaps are DISCOVERED by the engine, not seeded. The one seeded row
+  // is history: a gap that was asked and answered 10 days ago (cooldown + answer→memory linkage).
+  db.prepare(
+    `INSERT INTO knowledge_gaps (id, person_id, topic, domain, blocked_insight_id, confidence, sensitive, last_asked_at, declines, kind, evidence, importance, status, decision_ref, source, created_at, resolved_at)
+     VALUES ('gap_friends', ?, 'Time with friends lately', 'personal', NULL, 0.9, 0, ?, 0, 'stale', '{}', 0.6, 'resolved', 'balance:personal', 'seed', ?, ?)`,
+  ).run(PERSON_ID, dayAt(-10, 18, 0), dayAt(-10, 18, 0), dayAt(-10, 19, 0));
 
   db.prepare(
     `INSERT INTO questions (id, gap_id, text, evi_score, status, asked_at, answer_memory_id)

@@ -34,7 +34,8 @@ export function applyPlan(db: DatabaseSync, planId: string, now: string, personI
     if (c.op === "create") {
       const id = newId("evt");
       db.prepare(
-        "INSERT INTO events (id, person_id, title, start, end, domain, flexible, source, reschedule_count) VALUES (?, ?, ?, ?, ?, ?, 1, 'lifeos_plan', 0)",
+        // Applied means ON THE CALENDAR ('scheduled'); only a later check-in can make it 'done'.
+        "INSERT INTO events (id, person_id, title, start, end, domain, flexible, source, reschedule_count, completion) VALUES (?, ?, ?, ?, ?, ?, 1, 'lifeos_plan', 0, 'scheduled')",
       ).run(id, personId, c.title, c.start!, c.end!, c.domain);
       const back = db.prepare("SELECT start, end FROM events WHERE id = ?").get(id) as
         | { start: string; end: string }

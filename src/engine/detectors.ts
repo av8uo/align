@@ -1,12 +1,15 @@
 /**
- * Deterministic detectors G1–G8. Pure functions over loaded rows — no LLM involved.
- * Each returns Findings with explicit evidence so every insight is explainable.
+ * Deterministic detectors G1–G8 (G3 lives in balance.ts). Pure functions over
+ * loaded rows — no LLM involved. Each returns Findings with explicit evidence so
+ * every insight is explainable. Minimum-evidence rules: a single observation
+ * never becomes a pattern; findings without history carry low confidence and
+ * are suppressed from speech by the correlator.
  */
 import type { EventRow, GoalRow, MemoryRow } from "../core/types.js";
 import { addDays, dayStart, minutesOf, overlaps, daysBetween } from "./time.js";
 
 export interface Finding {
-  detector: "G1" | "G2" | "G3" | "G4" | "G5" | "G7" | "G8";
+  detector: "G1" | "G2" | "G3" | "G4" | "G5" | "G6" | "G7" | "G8";
   domains: string[];
   severity: 1 | 2 | 3;
   title: string;
@@ -33,8 +36,52 @@ const matches = (e: EventRow, g: GoalRow): boolean =>
 const inWindow = (e: EventRow, from: string, to: string): boolean =>
   e.start >= dayStart(from) && e.start < dayStart(to);
 
+/** Events matching a goal in a window — scheduled, done, missed or unknown alike. */
+export function goalEvents(events: EventRow[], g: GoalRow, from: string, to: string): EventRow[] {
+  return events.filter((e) => matches(e, g) && inWindow(e, from, to));
+}
+
+/**
+ * How many of a goal's sessions were on the calendar in a window. This is
+ * SCHEDULED adherence — planning signal, not proof anything happened. Outcome
+ * measurement uses completion evidence instead (see learn.ts).
+ */
 export function goalActual(events: EventRow[], g: GoalRow, from: string, to: string): number {
-  return events.filter((e) => matches(e, g) && inWindow(e, from, to)).length;
+  return goalEvents(events, g, from, to).filter((e) => e.completion !== "missed").length;
+}
+
+/**
+ * G6 — trend: weekly scheduled adherence over the last 4 full weeks. Declared
+ * only with ≥3 weeks of data and a monotone direction — one bad week is not a
+ * pattern. Limitation: measures what was on the calendar, not completion.
+ */
+export function g6Trend(ctx: Ctx): Finding[] {
+  const out: Finding[] = [];
+  for (const g of ctx.goals) {
+    if (g.status !== "active" || g.domain === "finance" || g.cadence_per_week === 0) continue;
+    const weeks: number[] = [];
+    for (let k = 4; k >= 1; k--) {
+      const from = addDays(ctx.today, -7 * k);
+      const to = addDays(ctx.today, -7 * (k - 1));
+      const any = ctx.events.some((e) => inWindow(e, from, to)); // the calendar covers this week at all
+      if (!any) continue;
+      weeks.push(Math.min(goalActual(ctx.events, g, from, to) / g.cadence_per_week, 1));
+    }
+    if (weeks.length < 3) continue;
+    const last3 = weeks.slice(-3);
+    const falling = last3[0]! > last3[1]! && last3[1]! >= last3[2]! && last3[0]! - last3[2]! >= 0.5;
+    const rising = last3[0]! < last3[1]! && last3[1]! <= last3[2]! && last3[2]! - last3[0]! >= 0.5;
+    if (!falling && !rising) continue;
+    out.push({
+      detector: "G6",
+      domains: [g.domain],
+      severity: falling ? 2 : 1,
+      title: falling ? `${g.title} has fallen off over three weeks` : `${g.title} is trending up over three weeks`,
+      evidence: { goalId: g.id, weeklyAdherence: last3.map((w) => Math.round(w * 100) / 100), weeks: 3, direction: falling ? "down" : "up" },
+      confidence: 0.8,
+    });
+  }
+  return out;
 }
 
 /** G1 — goal deficit over the last full week. */
@@ -73,8 +120,9 @@ export function g2Neglect(ctx: Ctx): Finding[] {
         domains: [g.domain],
         severity: g.domain === "family" ? 3 : 2,
         title: `No "${g.title}" in ${daysSince === 999 ? "recorded history" : `${daysSince} days`}`,
-        evidence: { goalId: g.id, daysSince, lastEventId: last?.id ?? null },
-        confidence: 0.95,
+        evidence: { goalId: g.id, daysSince, lastEventId: last?.id ?? null, window: [last?.start ?? null, todayIso] },
+        // No recorded history at all is weak evidence: the calendar may simply not cover it.
+        confidence: last ? 0.95 : 0.5,
       });
     }
   }
@@ -193,6 +241,7 @@ export function runDetectors(ctx: Ctx): Finding[] {
     ...g2Neglect(ctx),
     ...g4EveningCreep(ctx),
     ...g5Postponement(ctx),
+    ...g6Trend(ctx),
     ...g7FinancePacing(ctx),
     ...g8ForwardScan(ctx),
   ];

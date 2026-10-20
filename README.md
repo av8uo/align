@@ -27,7 +27,7 @@ What that feels like as a user:
 | Morning, proactively | *"Work ran late 4 evenings. You and Sam haven't had a night out in a month. One question — how are things with Sam lately?"* |
 | You: "Fix it." | *"Protect Friday evening for you two, move Thursday's workshop before Maya's recital, two Spanish mornings. Locked meetings untouched. This is an experiment — I'll measure it."* |
 | Before a decision | *"That client dinner collides with the recital — want a different slot?"* |
-| One week later, proactively | *"Date night happened — first in a month. Hypothesis confirmed. And your house fund — how did October go?"* |
+| One week later, proactively | *"Last week's plan put 8 sessions on your calendar; I can't tell yet whether they happened. Did date night with Sam happen on Friday?"* — and only what you confirm becomes a result |
 | When nothing's wrong | **Nothing.** Proactive ≠ interrupting. |
 
 ## The whole of your life — not a slice of it
@@ -64,21 +64,21 @@ choose the intervention maximizing:
 subject to: hard constraints (locked events, preferences, quiet hours)
 ```
 
-Both probabilities are live, Laplace-smoothed estimates from Align's **own recorded history**: every plan declares a hypothesis, every outcome is measured a week later against baseline, every verdict rewrites the planner's weights, every spoken correction ("I hate morning gym") durably reshapes future plans, and every confirmed insight lifts the hedging from its speech. **Week one it reasons well about a stranger; week eight it reasons about *you*.**
+Both estimates are shrunk toward a cold-start prior with the sample size kept visible (`n` is in every plan's `ranking`), and they are computed from **completion evidence** — what you confirmed happened — never from what was merely on the calendar. The kind is `create:<domain>:<morning|evening>`, so "evening gym gets done, morning gym gets skipped" changes the next plan's slot ranking; a kind is suppressed only once evidence says so (lower bound < 0.2 with n ≥ 4). Inconclusive outcomes are excluded, never counted as failures. A declined plan is recorded as acceptance evidence. ([src/engine/learn.ts](src/engine/learn.ts), [src/engine/solver.ts](src/engine/solver.ts))
 
 ## Core subsystems
 
 1. **Life-State Model** — persistent world-model (SQLite): events, cadence goals, and an 8-type memory system (`fact | preference | goal_note | experience | pattern | hypothesis | commitment | outcome`), every item carrying confidence and provenance (`user_said` vs `engine_inferred`). Facts are never conflated with hypotheses.
 
-2. **Deterministic Analysis Engine** — 8 pure-function detectors ([src/engine/detectors.ts](src/engine/detectors.ts)): goal-deficit, neglect, attention-drift (time-allocation vs value-ranking), overload, postponement-chains, data-staleness, financial pacing, and **forward-scan** — every detector also runs over the *future* week, so problems are caught before they happen. A cross-domain correlator ([src/engine/correlate.ts](src/engine/correlate.ts)) merges findings sharing evidence into composite insights (work↔family↔health↔growth) with full evidence chains.
+2. **Deterministic Analysis Engine** — 8 pure-function detectors ([src/engine/detectors.ts](src/engine/detectors.ts), G3 in [balance.ts](src/engine/balance.ts)): goal-deficit, neglect, attention-drift (time-allocation vs value-ranking), overload, postponement-chains, **trend** (≥3 weeks of data, monotone direction — one bad week is not a pattern), financial pacing, and **forward-scan** over the next 7 days. A cross-domain correlator ([src/engine/correlate.ts](src/engine/correlate.ts)) merges findings sharing evidence into composite insights. **Every surfaced insight carries** the exact record ids and time window, which memories were *stated* vs *inferred*, alternative explanations the evidence can't exclude, what's missing, and what would dissolve it. Co-occurrence is never reported as cause. Weak findings (no history, single observation) are stored as `weak` and never spoken.
 
-3. **Expected-Value-of-Information Inquiry** ([src/engine/inquiry.ts](src/engine/inquiry.ts)) — the agent quantifies its own ignorance: gaps scored `0.5·severity + 0.4·(1−confidence) + 0.1·staleness − 0.3·declines`; exactly **one** question per briefing (argmax), filtered by a sensitive-topic blocklist, cooldowns, and quiet hours. Answers write back into the model and re-trigger analysis.
+3. **Knowledge-gap discovery + decision-aware inquiry** ([src/engine/gaps.ts](src/engine/gaps.ts)) — gaps are **discovered every engine run from the rows**, never seeded: *completion unknown* (plan sessions nobody confirmed), *progress unknown* (a self-tracked goal with no log this month), *stale signal* (≥21 days without evidence in a top-ranked value), *contradiction* (two notes about the same goal with opposite polarity — asked, not guessed). Each gap stores kind, evidence ids, importance, uncertainty and **the decision its answer would change**. Score = `importance × uncertainty × decision-leverage − burden − 0.3·declines`; at most **one** question per day, a week's cooldown per gap, and **no question at all** when no answer would change what Align does. Question text is a template filled only with stated facts ("Married to Sam" → "how are things with Sam?").
 
 4. **Probabilistic Intervention Planner** ([src/engine/solver.ts](src/engine/solver.ts)) — a constraint solver (immovable events never move; slots honor stated preferences) where every candidate change is weighted `P(user accepts | history) × P(improves metric | measured outcomes)` — both Laplace-smoothed from the agent's own recorded history.
 
 5. **Gated, Verified Execution** ([src/engine/executor.ts](src/engine/executor.ts)) — no mutation without explicit approval; after every write the executor **re-reads world state** and emits per-operation verification. Unverified success is never claimed. Every action is journaled.
 
-6. **Outcome Measurement & Online Learning** ([src/engine/learn.ts](src/engine/learn.ts)) — every plan declares a hypothesis; one follow-up window later its metrics are recomputed against baseline and verdicted. Verdicts feed the planner's priors: **the agent is measurably different every week.**
+6. **Honest Outcome Measurement** ([src/engine/learn.ts](src/engine/learn.ts)) — every event carries completion evidence: `scheduled | done | missed | unknown`. Applying a plan makes sessions *scheduled*; only a user check-in ("we did", "skipped Friday", "twice") makes them *done* or *missed*. Outcomes store scheduled / confirmed / missed / unknown and data completeness; verdicts are `improved | unchanged | worse | inconclusive`, **unknown never counts as success or failure**, inconclusive outcomes re-measure when evidence arrives, and attribution is recorded as association — the spoken result says "I can't prove the plan caused it".
 
 7. **Counterfactual Simulator** — hypothetical state injection + full detector re-run = the cost of a decision, computed *before* it's made.
 
@@ -135,7 +135,7 @@ Requirements: **Node.js ≥ 24** (uses the built-in `node:sqlite`), any OS. No A
 
 ```bash
 npm install
-npm test        # 85 tests across 9 suites — engine, MCP wire, proactive quiet rule, Bedrock circuit breaker
+npm test        # 109 tests across 10 suites — engine, MCP wire, proactive quiet rule, host brains, intelligence evaluation
 npm start       # http://localhost:3344/sim  (simulator) · /mcp (MCP endpoint) · /healthz · /stats
 ```
 
@@ -165,11 +165,11 @@ Whatever the setting, any LLM failure (bad key, quota, refusal) falls back to th
 ### Test results (Oct 20, 2026)
 
 ```
-Test Files  9 passed (9)
-     Tests  85 passed (85)
+Test Files  10 passed (10)
+     Tests  109 passed (109)
 ```
 
-Suites: `engine` (detectors, correlator, solver, learning), `schema`, `seed`, `mcp` (wire-level: full two-week demo arc over Streamable HTTP, latency budget asserted), `proactive` (quiet rule), `orchestrator` (LLM failure → rules fallback, conversation routing), `bedrock` (circuit breaker with injected transport), `anthropic` (Claude-API host loop with injected transport). Run `npm test` to reproduce.
+Suites: `engine` (detectors, correlator, solver, learning), `schema`, `seed`, `mcp` (wire-level: full two-week demo arc over Streamable HTTP, latency budget asserted), `proactive` (quiet rule, honest week-later flow), `orchestrator` (LLM failure → rules fallback, conversation routing), `bedrock` / `anthropic` (host loops with injected transports), `memory`, and `intelligence` — the evaluation suite on fixed fixtures. Its printed metrics on this fixture: **insight precision** 5 surfaced / 5 total with a planted no-history goal suppressed as weak; **question usefulness** 4 of 5 discovered gaps worth asking in week 2, top = the completion question (leverage 1); **outcome data completeness** 2 of 3 metrics fully confirmed after check-ins, health baseline 1; **ranking change** evening gym 0.87 (n=4) vs morning 0.20 (n=4, lower bound 0.04) → evening chosen, morning suppressed — without any stated preference. Run `npm test` to reproduce.
 
 ## Alexa+ functional requirements coverage
 
@@ -194,7 +194,7 @@ Mapping of [Alexa+ functional requirements](https://developer.amazon.com/docs/al
 | Real & working | Simulated (clearly labeled) | Deferred |
 |---|---|---|
 | MCP server (spec 2025-11-25), portable to any MCP host | The Alexa+ host: voice pipeline + **agent-initiated proactive speech** (no public API for add-on-initiated turns — filed as our #1 feature request) | Real calendar OAuth (`.ics`-style import + seeded data instead) |
-| Engine, memory, verified execution, learning loop — 85 automated tests | Echo Show / Echo Dot device frames | Multi-person households (schema ready) |
+| Engine, memory, verified execution, learning loop — 109 automated tests | Echo Show / Echo Dot device frames | Multi-person households (schema ready) |
 | LLM host brain: Claude via the Claude API voices the demo video; the Bedrock integration (Converse tool-use loop, circuit breaker, fallback) is implemented and tested with injected failures | — | **Bedrock as the live voice:** at submission time every Bedrock call is throttled by a new-account daily token quota (AWS Support case filed), so the demo uses the Claude API path — same tools, same engine, different plumbing |
 | Hourly background engine runs | — | **Hosted deployment:** the ECS Express Mode deploy script is complete and preflight-tested, but **not provisioned** — a deliberate no-cost decision; the project runs locally in two commands |
 | — | — | Finance *advice* (policy); only user-stated goals with self-reported progress · Real Alexa+ deployment (private preview gated) |
@@ -203,6 +203,12 @@ Mapping of [Alexa+ functional requirements](https://developer.amazon.com/docs/al
 - Calendar and life data are seeded demo data (an `.ics`-style import), not a live calendar OAuth.
 - The proactive channel, voice pipeline and device frames are a simulation of Alexa+ — there is no public API today for an add-on to initiate a turn.
 - The Bedrock brain has not yet produced a live spoken turn in this account because of the day-one quota; its behavior is covered by unit tests with an injected transport. The demo video is voiced by the Claude-API host instead — identical role, identical tools.
+- Completion evidence comes only from what the user says (no calendar/health integration), so outcomes stay *inconclusive* until a check-in; the demo persona's past history is fixture data marked done.
+- Gap discovery covers four gap types; question wording is templated (deterministic), not generated.
+- Trend detection (G6) measures scheduled adherence, not completion, and needs three weeks of calendar coverage.
+- Learned estimates are per `domain × time-of-day`; outcome verdicts count at domain level for both times of day.
+- `apply_plan` writes are verified per change but not wrapped in a transaction; a mid-way failure leaves the plan `approved` with partial, journaled changes.
+- The server has no authentication and permissive CORS: it is a local demo, not a hosted service.
 - Single user, single household; English only.
 
 ## AWS (Builder mini challenge)

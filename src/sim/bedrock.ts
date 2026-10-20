@@ -41,7 +41,11 @@ Rules:
 - You cannot edit a plan. apply_plan applies the latest proposal EXACTLY as propose_plan returned it. If the user wants something different, call propose_plan again (after remember/check_in for new preferences) and read the new plan — or say plainly what cannot be done.
 - "Fix it" / "make a plan" means: call propose_plan now and read its result. Never answer it from memory.
 - After apply_plan, report what it verified — nothing more.
-- Save a preference or fact once. If a tool answers "already noted", don't call it again and don't announce saving it.`;
+- Save a preference or fact once. If a tool answers "already noted", don't call it again and don't announce saving it.
+- Completion evidence: when the user says what actually happened ("we did date night", "skipped gym Friday", "went twice"), call check_in with completions=[{title|goal_id, status: done|missed, count?, day?}]. Mark ONLY what they explicitly said; never assume a scheduled session happened.
+- If the user declines to answer Align's question, call check_in with question_id and decline=true. If they decline a proposed plan, call apply_plan with reject=true (approve=false).
+- Self-reported progress with an amount ("I put in 450"): call get_goal_progress to find the matching goal_id, then check_in with goal_id and amount. Don't ask which goal if only one goal fits.
+- Outcomes: say "confirmed" only for what check_in recorded; unconfirmed sessions are "unknown", never "done". Never say a plan "worked" without confirmed evidence.`;
 
 export interface McpToolDef {
   name: string;

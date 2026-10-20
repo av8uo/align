@@ -57,7 +57,7 @@ describe("MCP wire protocol", () => {
     const briefing = await callTool("get_daily_briefing");
     const b = briefing.structuredContent as { insights: Array<{ id: string; title: string }>; question: { id: string; text: string } | null };
     expect(briefing.content[0]!.text).toContain("Work is crowding");
-    expect(b.question?.text).toContain("Sam");
+    expect(b.question?.text).toContain("Sam"); // discovered gap, partner from the stated fact
     const compositeId = b.insights.find((i) => i.title.startsWith("Work is crowding"))!.id;
 
     // Answer the question

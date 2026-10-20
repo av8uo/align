@@ -151,12 +151,44 @@ export function openDb(path?: string): DatabaseSync {
   return db;
 }
 
+/**
+ * Additive forward migrations. Every column has a default, so rows written by
+ * older versions keep working and an older build can still read the file
+ * (rollback = run the previous code; nothing is dropped or rewritten).
+ */
+const MIGRATIONS: string[] = [
+  "ALTER TABLE plans ADD COLUMN hypothesis TEXT",
+  // Intelligence 2.0 — completion evidence, honest outcomes, discovered gaps.
+  "ALTER TABLE events ADD COLUMN completion TEXT NOT NULL DEFAULT 'unknown'", // scheduled | done | missed | unknown
+  "ALTER TABLE events ADD COLUMN completion_source TEXT",                       // user_said | seed | null
+  "ALTER TABLE events ADD COLUMN completed_at TEXT",
+  "ALTER TABLE knowledge_gaps ADD COLUMN kind TEXT NOT NULL DEFAULT 'unknown'", // unknown | contradiction | stale
+  "ALTER TABLE knowledge_gaps ADD COLUMN evidence TEXT NOT NULL DEFAULT '{}'",
+  "ALTER TABLE knowledge_gaps ADD COLUMN importance REAL NOT NULL DEFAULT 0.5",
+  "ALTER TABLE knowledge_gaps ADD COLUMN status TEXT NOT NULL DEFAULT 'open'",  // open | resolved | declined
+  "ALTER TABLE knowledge_gaps ADD COLUMN decision_ref TEXT",
+  "ALTER TABLE knowledge_gaps ADD COLUMN source TEXT NOT NULL DEFAULT 'seed'",  // seed | engine
+  "ALTER TABLE knowledge_gaps ADD COLUMN created_at TEXT",
+  "ALTER TABLE knowledge_gaps ADD COLUMN resolved_at TEXT",
+  "ALTER TABLE questions ADD COLUMN reason TEXT",
+  "ALTER TABLE outcomes ADD COLUMN scheduled REAL",
+  "ALTER TABLE outcomes ADD COLUMN confirmed REAL",
+  "ALTER TABLE outcomes ADD COLUMN missed REAL",
+  "ALTER TABLE outcomes ADD COLUMN unknown REAL",
+  "ALTER TABLE outcomes ADD COLUMN data_completeness REAL",
+  "ALTER TABLE outcomes ADD COLUMN window_start TEXT",
+  "ALTER TABLE outcomes ADD COLUMN window_end TEXT",
+  "ALTER TABLE outcomes ADD COLUMN attribution TEXT NOT NULL DEFAULT 'association'",
+  "ALTER TABLE memory_items ADD COLUMN supersedes_id TEXT",
+];
+
 export function migrate(db: DatabaseSync): void {
   db.exec(DDL);
-  // Lightweight forward migration for databases created before the column existed.
-  try {
-    db.exec("ALTER TABLE plans ADD COLUMN hypothesis TEXT");
-  } catch {
-    /* column already exists */
+  for (const sql of MIGRATIONS) {
+    try {
+      db.exec(sql);
+    } catch {
+      /* column already exists */
+    }
   }
 }

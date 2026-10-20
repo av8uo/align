@@ -9,10 +9,10 @@ import { newId } from "../core/ids.js";
 import { goalActual, keywordOf } from "../engine/detectors.js";
 import { lifeBalance, type DomainScore } from "../engine/balance.js";
 import { loadCtx, runEngine } from "../engine/engine.js";
-import { markAsked, recordAnswer } from "../engine/inquiry.js";
+import { markAsked, recordAnswer, recordDecline, questionDecision } from "../engine/inquiry.js";
 import { applyPlan } from "../engine/executor.js";
 import { proposePlan } from "../engine/solver.js";
-import { type Change } from "../engine/learn.js";
+import { recordCompletions, recordRejection, type Change, type CompletionReport } from "../engine/learn.js";
 import { addDays, fromMs, overlaps, toMs, weekdayOf } from "../engine/time.js";
 import { runDetectors } from "../engine/detectors.js";
 
@@ -39,6 +39,36 @@ export interface ToolResult {
   isError?: boolean;
 }
 
+/**
+ * Spoken results: only confirmed evidence counts. Scheduled-but-unconfirmed
+ * sessions are said to be unknown, never claimed as done.
+ */
+export function resultsSentence(outcomes: Array<{ metric: string; baseline: number | null; observed: number; verdict: string; scheduled: number; confirmed: number; unknown: number }>): string {
+  if (outcomes.length === 0) return "";
+  const name = (m: string) => m.replace("_adherence", "");
+  const known = outcomes.filter((o) => o.verdict !== "inconclusive");
+  const open = outcomes.filter((o) => o.verdict === "inconclusive");
+  const parts: string[] = [];
+  if (known.length) {
+    parts.push(
+      `Results from last week's plan, from what you've confirmed: ${known
+        .slice(0, 3)
+        .map((o) => `${name(o.metric)} ${o.baseline === null ? "now at" : `went ${o.baseline} to`} ${o.observed} (${o.verdict})`)
+        .join(", ")}${known.length > 3 ? `, and ${known.length - 3} more` : ""}.`,
+    );
+  }
+  if (open.length) {
+    const scheduled = open.reduce((a, o) => a + o.scheduled, 0);
+    const unknown = open.reduce((a, o) => a + o.unknown, 0);
+    parts.push(
+      known.length
+        ? `For ${open.map((o) => name(o.metric)).join(", ")} I don't know yet — ${unknown} of ${scheduled} sessions unconfirmed.`
+        : `Last week's plan put ${scheduled} sessions on your calendar; I can't tell yet whether they happened — ${unknown} are unconfirmed.`,
+    );
+  }
+  return parts.join(" ");
+}
+
 // ---------------------------------------------------------------- briefing
 export function getDailyBriefing(db: DatabaseSync, today: string): ToolResult {
   ensureEngineRun(db, today);
@@ -48,7 +78,9 @@ export function getDailyBriefing(db: DatabaseSync, today: string): ToolResult {
       "SELECT id, title, severity, domains, confidence FROM insights WHERE status IN ('new','surfaced') ORDER BY severity DESC, confidence DESC LIMIT 3",
     )
     .all() as Array<{ id: string; title: string; severity: number; domains: string; confidence: number }>;
-  for (const i of insights) db.prepare("UPDATE insights SET status='surfaced' WHERE id=?").run(i.id);
+  // Everything new was available to be heard in this briefing (headline + "also"):
+  // the quiet rule counts only insights that appeared since the last briefing.
+  db.prepare("UPDATE insights SET status='surfaced' WHERE status='new'").run();
 
   // At most ONE question per day, across all briefings (never interrogate).
   const askedToday = (db.prepare("SELECT COUNT(*) AS n FROM questions WHERE asked_at LIKE ?").get(`${today}%`) as { n: number }).n;
@@ -61,17 +93,9 @@ export function getDailyBriefing(db: DatabaseSync, today: string): ToolResult {
 
   // Measured results from recently completed follow-up windows: close the loop out loud.
   const outcomes = db
-    .prepare("SELECT metric, baseline, observed, verdict FROM outcomes WHERE measured_at >= ?")
-    .all(addDays(today, -1)) as Array<{ metric: string; baseline: number; observed: number; verdict: string }>;
-  const resultsLine =
-    outcomes.length > 0
-      ? `Results from last week's plan: ${outcomes
-          .slice(0, 3)
-          .map((o) => `${o.metric.replace("_adherence", "")} went ${o.baseline} to ${o.observed}`)
-          .join(", ")}${outcomes.length > 3 ? `, and ${outcomes.length - 3} more` : ""} — ${
-          outcomes.every((o) => o.verdict === "improved") ? "all improved." : "mostly better."
-        }`
-      : "";
+    .prepare("SELECT metric, baseline, observed, verdict, scheduled, confirmed, unknown FROM outcomes WHERE measured_at >= ?")
+    .all(addDays(today, -1)) as Array<{ metric: string; baseline: number | null; observed: number; verdict: string; scheduled: number; confirmed: number; unknown: number }>;
+  const resultsLine = resultsSentence(outcomes);
 
   // Streak celebrations: momentum made audible (≥2 weeks), and "back on track"
   // revivals (hit last week after missing the week before).
@@ -185,37 +209,90 @@ export function getInsight(db: DatabaseSync, insightId: string): ToolResult {
       : row.confidence >= 0.85
         ? "I'm confident about this: "
         : "";
+  const evidence = JSON.parse(row.evidence) as { alternatives?: string[]; missing?: string[]; would_change?: string; stated?: string[]; records?: unknown[] };
+  const alt = evidence.alternatives?.[0] ? ` Another explanation I can't rule out: ${evidence.alternatives[0]}` : "";
+  const basis = evidence.stated?.length ? ` This leans on what you told me, not just the calendar.` : "";
   return {
-    text: `${row.title}. ${certainty}${row.reasoning} Say "fix it" and I'll propose a plan.`,
+    text: `${row.title}. ${certainty}${row.reasoning}${basis}${alt} Say "fix it" and I'll propose a plan.`,
     data: {
       id: row.id,
       title: row.title,
       severity: row.severity,
       domains: JSON.parse(row.domains),
-      evidence: JSON.parse(row.evidence),
+      evidence,
       reasoning: row.reasoning,
       confidence: row.confidence,
+      record_count: evidence.records?.length ?? 0,
     },
   };
 }
 
 // ---------------------------------------------------------------- check-in
+/**
+ * Turn a plain-language answer to a completion question into evidence —
+ * only from explicit words ("yes", "we did", "skipped", "twice", "2 of 3").
+ * Returns null when the answer is ambiguous: ambiguity stays unknown.
+ */
+export function parseCompletionAnswer(content: string, scheduled: number): { done: number; missed: number } | null {
+  const c = content.toLowerCase();
+  const num = c.match(/\b(\d+)\s*(?:of\s*\d+|times?|sessions?)?\b/);
+  const words: Record<string, number> = { none: 0, zero: 0, once: 1, one: 1, twice: 2, two: 2, three: 3, four: 4, five: 5, all: scheduled, every: scheduled };
+  let done: number | null = null;
+  if (num) done = Number(num[1]);
+  else for (const [w, n] of Object.entries(words)) if (new RegExp(`\\b${w}\\b`).test(c)) { done = n; break; }
+  if (done === null) {
+    if (/\b(yes|yeah|yep|we did|it happened|went|did it|made it|done)\b/.test(c) && !/\b(no|not|didn'?t|skip|miss)\w*/.test(c)) done = scheduled;
+    else if (/\b(no|nope|didn'?t|did not|skipped|missed|cancel+ed|fell through)\b/.test(c)) done = 0;
+  }
+  if (done === null) return null;
+  done = Math.max(0, Math.min(done, scheduled));
+  return { done, missed: scheduled - done };
+}
+
 export function checkIn(
   db: DatabaseSync,
   today: string,
-  args: { content: string; domain?: string; question_id?: string; goal_id?: string; amount?: number },
+  args: { content: string; domain?: string; question_id?: string; goal_id?: string; amount?: number; completions?: CompletionReport[]; decline?: boolean },
   personId = "alex",
 ): ToolResult {
   const now = nowAt(today);
   let memoryId: string;
+  const marked: string[] = [];
+  let completionNote = "";
+  if (args.question_id && args.decline) {
+    recordDecline(db, args.question_id);
+    return { text: "No problem — I won't ask again for a while.", data: { memory_id: null, pacing: null, engine_refreshed: false, declined: true } };
+  }
   if (args.question_id) {
+    const decision = questionDecision(db, args.question_id);
     memoryId = recordAnswer(db, personId, args.question_id, args.content, now).memoryId;
+    // An answer to "did X happen?" is completion evidence for exactly those events.
+    if (decision?.decisionRef?.startsWith("outcome:")) {
+      const goalId = decision.decisionRef.slice("outcome:".length);
+      const scheduled = Number(decision.evidence.scheduled ?? 1);
+      const parsed = parseCompletionAnswer(args.content, scheduled);
+      if (parsed) {
+        const reports: CompletionReport[] = [];
+        if (parsed.done > 0) reports.push({ goal_id: goalId, status: "done", count: parsed.done });
+        if (parsed.missed > 0) reports.push({ goal_id: goalId, status: "missed", count: parsed.missed });
+        marked.push(...recordCompletions(db, today, reports, now, personId));
+        completionNote = parsed.done === scheduled ? "Great — I've recorded that as done." : parsed.done === 0 ? "Understood — I've recorded it as missed. That's not a judgment; it tells me what to plan around." : `Got it — ${parsed.done} done, ${parsed.missed} missed. I've recorded that.`;
+      } else {
+        completionNote = "I couldn't tell from that whether it happened — say yes, no, or how many times.";
+      }
+    }
   } else {
     memoryId = newId("mem");
     db.prepare(
       `INSERT INTO memory_items (id, person_id, kind, content, confidence, source, question_id, status, created_at, updated_at)
        VALUES (?, ?, 'experience', ?, 0.9, 'user_said', NULL, 'active', ?, ?)`,
     ).run(memoryId, personId, args.content, now, now);
+  }
+
+  // Explicit completion reports ("I went to the gym twice, skipped Friday").
+  if (args.completions?.length) {
+    marked.push(...recordCompletions(db, today, args.completions, now, personId));
+    completionNote = marked.length ? `Recorded ${marked.length} session${marked.length === 1 ? "" : "s"} from what you told me.` : "I couldn't match that to anything on your calendar in the last two weeks.";
   }
 
   let pacing: string | null = null;
@@ -230,11 +307,17 @@ export function checkIn(
     pacing = target > 0 ? (sum.s >= target ? `on target for ${month}` : `$${target - sum.s} short of the $${target} target for ${month}`) : null;
   }
 
-  // Fresh signal can change insights — refresh the precomputed layer now.
-  runEngine(db, today);
+  // Fresh signal can change insights and outcome verdicts — refresh now.
+  const summary = runEngine(db, today);
+  const measured = summary.outcomesMeasured.filter((m) => m.verdict !== "inconclusive");
+  const text = pacing
+    ? `Logged. You're ${pacing}.`
+    : completionNote
+      ? `${completionNote}${measured.length ? ` ${measured.map((m) => `${m.metric.replace("_adherence", "")}: ${m.verdict}`).join(", ")}.` : ""}`
+      : "Got it — I've noted that and updated my understanding.";
   return {
-    text: pacing ? `Logged. You're ${pacing}.` : "Got it — I've noted that and updated my understanding.",
-    data: { memory_id: memoryId, pacing, engine_refreshed: true },
+    text,
+    data: { memory_id: memoryId, pacing, engine_refreshed: true, completions_recorded: marked, outcomes_measured: summary.outcomesMeasured },
   };
 }
 
@@ -255,18 +338,39 @@ export function remember(db: DatabaseSync, today: string, content: string, kind:
     };
   }
   const id = newId("mem");
+  // A new preference that contradicts an older one about the same thing
+  // supersedes it: the old note is marked corrected (kept for audit), not deleted.
+  let superseded: { id: string; content: string } | null = null;
+  if (kind === "preference") {
+    const c = normalizeMemory(content);
+    const NEG = /\b(hate|dislike|don t like|avoid|not a fan|no more|can t stand)\b/;
+    const tod = /morning/.test(c) ? "morning" : /evening|night/.test(c) ? "evening" : null;
+    const subject = c.match(/\b(gym|workout|spanish|date night|run|read|call mom)\b/)?.[1] ?? null;
+    if (tod && subject) {
+      const olds = db.prepare("SELECT id, content FROM memory_items WHERE person_id=? AND kind='preference' AND status='active'").all(personId) as Array<{ id: string; content: string }>;
+      for (const o of olds) {
+        const oc = normalizeMemory(o.content);
+        if (!oc.includes(subject) || !oc.includes(tod)) continue;
+        if (NEG.test(oc) !== NEG.test(c)) {
+          db.prepare("UPDATE memory_items SET status='corrected', updated_at=? WHERE id=?").run(now, o.id);
+          superseded = o;
+        }
+      }
+    }
+  }
   db.prepare(
-    `INSERT INTO memory_items (id, person_id, kind, content, confidence, source, question_id, status, created_at, updated_at)
-     VALUES (?, ?, ?, ?, 1.0, 'user_said', NULL, 'active', ?, ?)`,
-  ).run(id, personId, kind, content, now, now);
+    `INSERT INTO memory_items (id, person_id, kind, content, confidence, source, question_id, status, created_at, updated_at, supersedes_id)
+     VALUES (?, ?, ?, ?, 1.0, 'user_said', NULL, 'active', ?, ?, ?)`,
+  ).run(id, personId, kind, content, now, now, superseded?.id ?? null);
   return {
-    text:
-      kind === "preference"
+    text: superseded
+      ? `Updated — I'll go with this instead of "${superseded.content.replace(/[.!]+$/, "")}".`
+      : kind === "preference"
         ? "Preference saved — I'll plan around it from now on."
         : kind === "goal_note"
           ? "Kept as something you want — it will weigh on every plan I propose."
           : `Remembered as a ${kind}.`,
-    data: { memory_id: id, kind, content },
+    data: { memory_id: id, kind, content, supersedes_id: superseded?.id ?? null },
   };
 }
 
@@ -383,7 +487,12 @@ export function proposePlanTool(db: DatabaseSync, today: string, insightId: stri
   };
 }
 
-export function applyPlanTool(db: DatabaseSync, today: string, planId: string, approve: boolean): ToolResult {
+export function applyPlanTool(db: DatabaseSync, today: string, planId: string, approve: boolean, reject = false): ToolResult {
+  if (reject) {
+    // A decline is acceptance evidence for the planner — recorded, nothing applied.
+    const ok = recordRejection(db, planId);
+    return { text: ok ? "Okay — I'll leave your week as it is, and I'll remember you passed on that kind of change." : `Plan ${planId} is not awaiting a decision.`, data: { plan_id: planId, status: ok ? "rejected" : "unchanged" }, isError: !ok };
+  }
   if (approve !== true) {
     const plan = db.prepare("SELECT title FROM plans WHERE id=?").get(planId) as { title: string } | undefined;
     return {
@@ -437,6 +546,9 @@ export function simulateChange(
     flexible: 0,
     source: "seed" as const,
     reschedule_count: 0,
+    completion: "scheduled" as const,
+    completion_source: null,
+    completed_at: null,
   };
 
   const base = runDetectors(ctx);
@@ -463,20 +575,41 @@ export function simulateChange(
 // ---------------------------------------------------------------- what changed
 export function whatsChanged(db: DatabaseSync, today: string, since?: string): ToolResult {
   const from = since ?? addDays(today, -7);
-  // Measure anything whose follow-up window has completed by "today".
+  // Measure anything whose follow-up window has completed by "today" (re-measures inconclusive ones).
   runEngine(db, today);
   const outcomes = db
     .prepare(
-      `SELECT o.metric, o.baseline, o.observed, o.verdict, p.title, p.hypothesis FROM outcomes o JOIN plans p ON p.id=o.plan_id WHERE o.measured_at >= ?`,
+      `SELECT o.metric, o.baseline, o.observed, o.verdict, o.scheduled, o.confirmed, o.missed, o.unknown, o.data_completeness, o.attribution, p.title, p.hypothesis
+       FROM outcomes o JOIN plans p ON p.id=o.plan_id WHERE o.measured_at >= ?`,
     )
-    .all(from) as Array<{ metric: string; baseline: number; observed: number; verdict: string; title: string; hypothesis: string | null }>;
+    .all(from) as Array<{ metric: string; baseline: number | null; observed: number; verdict: string; scheduled: number; confirmed: number; missed: number; unknown: number; data_completeness: number; attribution: string; title: string; hypothesis: string | null }>;
   const hypothesis = outcomes.find((o) => o.hypothesis)?.hypothesis ?? null;
-  const confirmed = outcomes.length > 0 && outcomes.every((o) => o.verdict === "improved");
-  const text =
-    outcomes.length === 0
-      ? "No measured outcomes yet — results land a week after a plan is applied."
-      : `Results: ${outcomes.map((o) => `${o.metric.replace("_adherence", "")} went ${o.baseline} to ${o.observed} (${o.verdict})`).join("; ")}.${
-          hypothesis ? ` ${confirmed ? "Hypothesis confirmed" : "Hypothesis partly held"}: ${hypothesis}` : ""
-        }`;
-  return { text, data: { since: from, outcomes, hypothesis, hypothesis_confirmed: confirmed } };
+  const known = outcomes.filter((o) => o.verdict !== "inconclusive");
+  const open = outcomes.filter((o) => o.verdict === "inconclusive");
+  const verdict: "confirmed" | "refuted" | "partly" | "inconclusive" =
+    known.length === 0 ? "inconclusive" : known.every((o) => o.verdict === "improved") ? "confirmed" : known.every((o) => o.verdict === "worse") ? "refuted" : "partly";
+  const name = (m: string) => m.replace("_adherence", "");
+  let text: string;
+  if (outcomes.length === 0) text = "No measured outcomes yet — results land a week after a plan is applied.";
+  else {
+    const parts: string[] = [];
+    if (known.length) parts.push(`Confirmed so far: ${known.map((o) => `${name(o.metric)} ${o.baseline === null ? "at" : `${o.baseline} to`} ${o.confirmed} of ${o.scheduled} (${o.verdict})`).join("; ")}.`);
+    if (open.length) parts.push(`Still unknown: ${open.map((o) => `${name(o.metric)} — ${o.unknown} of ${o.scheduled} sessions unconfirmed`).join("; ")}. Tell me what happened and I'll update the verdict.`);
+    if (hypothesis) {
+      parts.push(
+        verdict === "confirmed"
+          ? `Hypothesis held: ${hypothesis} The sessions and the improvement went together — I can't prove the plan caused it, but it's the evidence I'll plan from.`
+          : verdict === "refuted"
+            ? `Hypothesis did not hold: ${hypothesis} I'll weigh that kind of change lower next time.`
+            : verdict === "partly"
+              ? `Hypothesis partly held: ${hypothesis}`
+              : `I can't judge the hypothesis yet: ${hypothesis}`,
+      );
+    }
+    text = parts.join(" ");
+  }
+  return {
+    text,
+    data: { since: from, outcomes, hypothesis, hypothesis_verdict: verdict, hypothesis_confirmed: verdict === "confirmed", attribution: "association" },
+  };
 }

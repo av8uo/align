@@ -91,6 +91,9 @@ const YES = /^(yes|yeah|yep|do it|apply|go ahead|confirm|sure|ok(ay)?)\b/i;
 const NO = /^(no|nope|not now|don'?t|no thanks|leave it|skip( it)?|later|maybe later)\b/i;
 const SMALLTALK = /^(hi|hello|hey|yo|hiya|thanks?( you)?( a lot)?|thank you|cheers|ok(ay)?|cool|great|nice|never ?mind|forget it|bye|good ?night|see you|yes|yeah|yep|no|nope|not now)[!. ]*$/i;
 const ANSWERED = "Thank you for telling me — I've noted it, and it changes how sure I am about what's going on. Say \"fix it\" when you want a plan.";
+/** The tool's own words win when the answer carried completion evidence or a verdict; otherwise the standard acknowledgement. */
+const answered = (call: ToolCallRecord): string =>
+  (call.data?.completions_recorded as string[] | undefined)?.length || /couldn't tell from that/.test(call.text) ? call.text : ANSWERED;
 const CAPABILITIES = 'I can brief you on your week, explain an insight, fix your schedule with your approval, or test a "what if". What would you like?';
 
 interface Route {
@@ -182,7 +185,23 @@ async function rulesBrain(text: string, state: SessionState, callTool: CallTool)
   // Declining a proposed plan is a decision, not a memory: nothing is applied.
   if (state.planAwaitingApproval && NO.test(text.trim())) {
     state.planAwaitingApproval = false;
+    // The decline is evidence for the planner (acceptance estimate), applied nothing.
+    if (state.lastPlanId) {
+      const call = await callTool("apply_plan", { plan_id: state.lastPlanId, approve: false, reject: true });
+      calls.push(call);
+    }
     return say('Okay — I\'ll leave your week as it is. Say "fix it" whenever you want the plan again.');
+  }
+  // Completion evidence stated outright ("we did date night", "I skipped gym twice").
+  const completion = text.match(/\b(went to|did|had|made it to|skipped|missed|cancel+ed)\b(?: the| my| our)?\s+(gym|date night|spanish|call mom|workout)\b(?:.*\b(once|twice|\d+ times|three times))?/i);
+  if (completion && !state.lastQuestionId) {
+    const status = /skip|miss|cancel/i.test(completion[1]!) ? "missed" : "done";
+    const c = completion[3]?.toLowerCase();
+    const count = c === "twice" ? 2 : c === "three times" ? 3 : c?.match(/^(\d+)/) ? Number(c.match(/^(\d+)/)![1]) : 1;
+    const call = await callTool("check_in", { content: text, completions: [{ title: completion[2]!, status, count }] });
+    calls.push(call);
+    absorb(state, call);
+    return say(call.text);
   }
   // Small talk and bare yes/no with nothing pending: conversation, never a memory,
   // and never mistaken for the answer to Align's open question.
@@ -192,7 +211,7 @@ async function rulesBrain(text: string, state: SessionState, callTool: CallTool)
       const call = await callTool("check_in", { content: text, question_id: state.lastQuestionId });
       calls.push(call);
       absorb(state, call);
-      return say(ANSWERED);
+      return say(answered(call));
     }
     if (/^(thanks?|thank you|cheers)/i.test(text.trim())) return say("Any time.");
     if (/^(bye|good ?night|see you)/i.test(text.trim())) return say("Good night. I'll keep an eye on the week and speak up only if something matters.");
@@ -243,7 +262,7 @@ async function rulesBrain(text: string, state: SessionState, callTool: CallTool)
     const call = await callTool("check_in", { content: text, question_id: state.lastQuestionId });
     calls.push(call);
     absorb(state, call);
-    return say(ANSWERED);
+    return say(answered(call));
   }
   for (const route of ROUTES) {
     const m = text.match(route.match);
@@ -298,7 +317,7 @@ async function rulesBrain(text: string, state: SessionState, callTool: CallTool)
     const call = await callTool("check_in", { content: text, question_id: state.lastQuestionId });
     calls.push(call);
     absorb(state, call);
-    return say(ANSWERED);
+    return say(answered(call));
   }
   // Any other question with no open question of Align's to answer: conversation, not a memory.
   if (/\?\s*$/.test(text)) return say(CAPABILITIES);

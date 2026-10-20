@@ -151,8 +151,9 @@ describe("rules brain: small talk, declines, direct edits, forget-by-text, what-
     const out = await orchestrate("Not now", s, { callTool });
     expect(out.reply).toMatch(/leave your week as it is/);
     expect(s.planAwaitingApproval).toBe(false);
+    expect(log).toEqual(["apply_plan"]); // the decline is recorded as acceptance evidence (reject=true), nothing applied
     expect((await orchestrate("Yes", newSession(), { callTool })).reply).toMatch(/Nothing is waiting on a yes/);
-    expect(log).toEqual([]);
+    expect(log).toEqual(["apply_plan"]);
   });
 
   it("is honest that direct calendar edits go through a plan", async () => {

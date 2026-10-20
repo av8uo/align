@@ -97,14 +97,29 @@ describe("conversation through the simulated Alexa+ host (rules brain)", () => {
 });
 
 describe("one week later: measure, adapt, next knowledge gap", () => {
-  it("after the time jump, LifeOS proactively reports measured results and asks about the NEW gap (finances)", async () => {
+  it("after the time jump, Align says it can't tell whether the plan happened and asks the completion question", async () => {
     const adv = (await (await fetch(`${base}/demo/advance`, { method: "POST" })).json()) as { today: string };
     expect(adv.today).toBe("2026-10-26");
-    const r = (await get("/proactive?session_id=demo")) as { quiet: boolean; text: string; data: { outcomes: unknown[] } };
+    const r = (await get("/proactive?session_id=demo")) as { quiet: boolean; text: string; data: { outcomes: Array<{ verdict: string }>; question: { text: string } | null } };
     expect(r.quiet).toBe(false);
-    expect(r.text).toContain("Results from last week's plan");
-    expect(r.text).toContain("house fund"); // the inquiry engine moved on to the finance gap
+    expect(r.text).toContain("can't tell yet whether they happened");
+    expect(r.text).not.toMatch(/all improved|went 0 to/);
     expect(r.data.outcomes.length).toBeGreaterThanOrEqual(4);
+    expect(r.data.outcomes.every((o) => o.verdict === "inconclusive")).toBe(true);
+    expect(r.data.question?.text).toBe("Did date night with Sam happen on Friday?"); // discovered completion gap, named from the stated fact
+  });
+
+  it("the answer becomes completion evidence and the verdict updates from it", async () => {
+    const r = await chat("Yes, we did!");
+    expect(r.toolCalls[0]?.name).toBe("check_in");
+    expect(r.reply).toContain("recorded that as done");
+    expect(r.reply).toContain("family (date night): improved");
+  });
+
+  it("stated completions ('went to the gym twice') are recorded as evidence, nothing else assumed", async () => {
+    const r = await chat("I went to the gym twice");
+    expect(r.toolCalls[0]?.name).toBe("check_in");
+    expect((r.toolCalls[0]!.data as { completions_recorded: string[] }).completions_recorded.length).toBe(2);
   });
 
   it("self-reported savings log with pacing arithmetic (user's own numbers, no advice)", async () => {
@@ -113,10 +128,14 @@ describe("one week later: measure, adapt, next knowledge gap", () => {
     expect(r.reply).toContain("$50 short");
   });
 
-  it("'how did my week go' → the hypothesis is reported as confirmed", async () => {
+  it("'how did my week go' → confirmed results are separated from unknowns; no causal claim", async () => {
     const r = await chat("How did my week go?");
     expect(r.toolCalls[0]?.name).toBe("whats_changed");
-    expect(r.reply).toContain("Hypothesis confirmed");
+    expect(r.reply).toContain("Confirmed so far: family (date night) 0 to 1 of 1 (improved)");
+    expect(r.reply).toContain("health (gym) 1 to 2 of 3 (improved)");
+    expect(r.reply).toContain("Still unknown: personal (spanish practice)");
+    expect(r.reply).toContain("can't prove the plan caused it");
+    expect((r.toolCalls[0]!.data as { attribution: string }).attribution).toBe("association");
   });
 
   it("reset restores day one", async () => {

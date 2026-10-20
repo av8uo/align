@@ -10,7 +10,7 @@ import { runEngine, type EngineSummary } from "../src/engine/engine.js";
 import { markAsked, recordAnswer } from "../src/engine/inquiry.js";
 import { proposePlan, type ProposedPlan } from "../src/engine/solver.js";
 import { applyPlan } from "../src/engine/executor.js";
-import { measureOutcomes, successPrior, acceptancePrior } from "../src/engine/learn.js";
+import { measureOutcomes, successPrior, acceptancePrior, recordCompletions, effectiveness } from "../src/engine/learn.js";
 
 let db: DatabaseSync;
 let first: EngineSummary;
@@ -46,9 +46,12 @@ describe("engine: detect + correlate", () => {
     expect(work.note).toContain("late evenings");
   });
 
-  it("asks the highest-EVI question: the marriage gap", () => {
-    expect(first.question?.gapId).toBe("gap_marriage");
-    expect(first.question?.text).toContain("Sam");
+  it("asks the highest-value question: the DISCOVERED stale-family gap, named from a stated fact", () => {
+    expect(first.question?.gapId).toBe("gap_stale_family");
+    expect(first.question?.text).toContain("Sam"); // partner name comes from the fact memory, not a template
+    const gap = db.prepare("SELECT kind, source, status, decision_ref FROM knowledge_gaps WHERE id='gap_stale_family'").get() as { kind: string; source: string; status: string; decision_ref: string };
+    expect(gap).toMatchObject({ kind: "stale", source: "engine", status: "open" });
+    expect(gap.decision_ref).toBe("insight-confidence:family"); // the answer lifts or lowers a hedged insight
   });
 });
 
@@ -62,8 +65,9 @@ describe("engine: answer -> memory", () => {
     );
     const mem = db.prepare("SELECT * FROM memory_items WHERE id=?").get(memoryId) as { question_id: string };
     expect(mem.question_id).toBe(first.question!.id);
-    const gap = db.prepare("SELECT confidence FROM knowledge_gaps WHERE id='gap_marriage'").get() as { confidence: number };
+    const gap = db.prepare("SELECT confidence, status FROM knowledge_gaps WHERE id=?").get(first.question!.gapId) as { confidence: number; status: string };
     expect(gap.confidence).toBe(0.9);
+    expect(gap.status).toBe("resolved");
   });
 });
 
@@ -74,7 +78,9 @@ describe("engine: plan -> verified execution", () => {
     plan = proposePlan(db, composite().id, DEMO_TODAY);
     const dateNight = plan.changes.find((c) => c.op === "create" && c.title.includes("Date night"));
     expect(dateNight?.start).toBe("2026-10-23T19:00:00"); // Friday evening
-    expect(plan.changes.filter((c) => c.op === "create" && c.domain === "personal").length).toBe(2);
+    // cadence 3: two free mornings + the evening alternative (ranked candidates, not a fixed template)
+    expect(plan.changes.filter((c) => c.op === "create" && c.domain === "personal").length).toBe(3);
+    expect(plan.ranking.find((r) => r.goal === "goal_gym")?.alternatives.map((a) => a.kind)).toEqual(["create:health:morning", "create:health:evening"]);
     const move = plan.changes.find((c) => c.op === "move");
     expect(move?.title).toBe("Client workshop");
     expect(move!.to!.end <= "2026-10-22T18:00:00").toBe(true); // ends before the recital
@@ -102,14 +108,24 @@ describe("engine: plan -> verified execution", () => {
 });
 
 describe("engine: measure -> learn (smarter every week)", () => {
-  it("measures outcomes one week later and verdicts improve", () => {
+  it("one week later, with nothing confirmed, every verdict is INCONCLUSIVE — scheduled is not done", () => {
     const measured = measureOutcomes(db, "2026-10-26");
     expect(measured.length).toBeGreaterThanOrEqual(4); // date, gym, spanish, mom
-    expect(measured.every((m) => m.verdict === "improved")).toBe(true);
+    expect(measured.every((m) => m.verdict === "inconclusive")).toBe(true);
+    const row = db.prepare("SELECT scheduled, confirmed, missed, unknown, data_completeness, attribution FROM outcomes WHERE metric LIKE 'family_adherence (date%'").get() as Record<string, number | string>;
+    expect(row).toMatchObject({ confirmed: 0, missed: 0, data_completeness: 0, attribution: "association" });
+    expect(row.unknown).toBe(row.scheduled);
   });
 
-  it("priors shift from measured history — the agent now trusts these plans more", () => {
-    expect(successPrior(db, "create:family")).toBeGreaterThan(0.7);
-    expect(acceptancePrior(db, "create:family")).toBeGreaterThan(0.5);
+  it("confirmed completions re-measure the verdict and shift the learned estimates", () => {
+    const marked = recordCompletions(db, "2026-10-26", [{ goal_id: "goal_date", status: "done" }, { goal_id: "goal_gym", status: "done", count: 2 }, { goal_id: "goal_gym", status: "missed", count: 1 }], "2026-10-26T08:00:00");
+    expect(marked.length).toBe(4);
+    const measured = measureOutcomes(db, "2026-10-26");
+    expect(measured.find((m) => m.metric.startsWith("family_adherence (date"))?.verdict).toBe("improved");
+    expect(measured.find((m) => m.metric.startsWith("health"))?.verdict).toBe("improved"); // 2 confirmed > baseline 1
+    expect(measured.find((m) => m.metric.startsWith("personal"))?.verdict).toBe("inconclusive"); // nothing confirmed
+    expect(successPrior(db, "create:family:evening")).toBeGreaterThan(0.6);
+    expect(acceptancePrior(db, "create:family:evening")).toBeGreaterThan(0.5);
+    expect(effectiveness(db, "create:health:morning").n).toBe(4); // 3 events + 1 domain outcome
   });
 });

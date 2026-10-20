@@ -89,11 +89,9 @@ describe("seed demo preconditions", () => {
     expect(collision.n).toBeGreaterThanOrEqual(1);
   });
 
-  it("G6/EVI material: stale gaps exist, friends gap has an answered question linked to memory", () => {
-    const gaps = db.prepare("SELECT id FROM knowledge_gaps").all() as Array<{ id: string }>;
-    expect(gaps.map((g) => g.id)).toEqual(
-      expect.arrayContaining(["gap_marriage", "gap_finance_oct", "gap_friends"]),
-    );
+  it("knowledge gaps are not seeded — only one resolved historical gap with its answered question", () => {
+    const gaps = db.prepare("SELECT id, status, source FROM knowledge_gaps").all() as Array<{ id: string; status: string; source: string }>;
+    expect(gaps).toEqual([{ id: "gap_friends", status: "resolved", source: "seed" }]);
     const q = db.prepare("SELECT * FROM questions WHERE id='q_001'").get() as {
       status: string;
       answer_memory_id: string;

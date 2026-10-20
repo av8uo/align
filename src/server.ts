@@ -90,7 +90,7 @@ export function buildMcpServer(db: DatabaseSync, today: string): McpServer {
         insights: z.array(zInsightSummary),
         question: z.object({ id: z.string(), text: z.string() }).nullable(),
         outcomes: z
-          .array(z.object({ metric: z.string(), baseline: z.number(), observed: z.number(), verdict: z.string() }))
+          .array(z.object({ metric: z.string(), baseline: z.number().nullable(), observed: z.number(), verdict: z.string(), scheduled: z.number().optional(), confirmed: z.number().optional(), unknown: z.number().optional() }))
           .optional(),
         streaks: z.array(z.object({ goal: z.string(), weeks: z.number(), revived: z.boolean() })).optional(),
       },
@@ -120,7 +120,7 @@ export function buildMcpServer(db: DatabaseSync, today: string): McpServer {
       outputSchema: {
         id: z.string().optional(), title: z.string().optional(), severity: z.number().optional(),
         domains: z.array(z.string()).optional(), evidence: z.record(z.string(), z.unknown()).optional(),
-        reasoning: z.string().optional(), confidence: z.number().optional(),
+        reasoning: z.string().optional(), confidence: z.number().optional(), record_count: z.number().optional(),
       },
     },
     wrap("get_insight", (a: { insight_id: string }) => impl.getInsight(db, a.insight_id)),
@@ -138,11 +138,31 @@ export function buildMcpServer(db: DatabaseSync, today: string): McpServer {
         domain: z.string().optional().describe("family | health | personal | work | household | finance"),
         goal_id: z.string().optional().describe("For progress on a specific goal, e.g. goal_house"),
         amount: z.number().optional().describe("Numeric progress, e.g. dollars saved"),
+        completions: z
+          .array(
+            z.object({
+              goal_id: z.string().optional(),
+              title: z.string().optional().describe("Goal or session name when goal_id is unknown, e.g. 'gym'"),
+              status: z.enum(["done", "missed"]),
+              day: z.string().optional().describe("Weekday name or YYYY-MM-DD; omit for the most recent occurrence"),
+              count: z.number().int().min(1).max(14).optional().describe("How many recent sessions this applies to (default 1)"),
+            }),
+          )
+          .optional()
+          .describe("Completion evidence the user stated: what actually happened ('went to the gym twice', 'skipped date night'). Only mark what the user explicitly said."),
+        decline: z.boolean().optional().describe("true when the user declines to answer the question (with question_id)"),
       },
-      outputSchema: { memory_id: z.string(), pacing: z.string().nullable(), engine_refreshed: z.boolean() },
+      outputSchema: {
+        memory_id: z.string().nullable(), pacing: z.string().nullable(), engine_refreshed: z.boolean(),
+        completions_recorded: z.array(z.string()).optional(), outcomes_measured: z.array(z.object({ metric: z.string(), verdict: z.string(), unknown: z.number() })).optional(), declined: z.boolean().optional(),
+      },
     },
-    wrap("check_in", (a: { content: string; question_id?: string; domain?: string; goal_id?: string; amount?: number }) =>
-      impl.checkIn(db, today, a),
+    wrap(
+      "check_in",
+      (a: {
+        content: string; question_id?: string; domain?: string; goal_id?: string; amount?: number;
+        completions?: Array<{ goal_id?: string; title?: string; status: "done" | "missed"; day?: string; count?: number }>; decline?: boolean;
+      }) => impl.checkIn(db, today, a),
     ),
   );
 
@@ -156,7 +176,7 @@ export function buildMcpServer(db: DatabaseSync, today: string): McpServer {
         content: z.string(),
         kind: z.enum(["fact", "preference", "commitment", "goal_note"]).default("fact"),
       },
-      outputSchema: { memory_id: z.string(), kind: z.string(), content: z.string(), duplicate: z.boolean().optional() },
+      outputSchema: { memory_id: z.string(), kind: z.string(), content: z.string(), duplicate: z.boolean().optional(), supersedes_id: z.string().nullable().optional() },
     },
     wrap("remember", (a: { content: string; kind?: "fact" | "preference" | "commitment" | "goal_note" }) =>
       impl.remember(db, today, a.content, a.kind ?? "fact"),
@@ -208,6 +228,7 @@ export function buildMcpServer(db: DatabaseSync, today: string): McpServer {
         plan_id: z.string(), title: z.string().optional(), changes: z.array(zChange),
         tradeoffs: z.string().optional(), expected_benefit: z.string().optional(),
         hypothesis: z.string().nullable().optional(), requires_approval: z.boolean().optional(),
+        ranking: z.array(z.object({ goal: z.string(), chosen: z.string(), alternatives: z.array(z.object({ kind: z.string(), score: z.number(), n: z.number() })) })).optional(),
       },
     },
     wrap("propose_plan", (a: { insight_id: string }) => impl.proposePlanTool(db, today, a.insight_id)),
@@ -219,14 +240,18 @@ export function buildMcpServer(db: DatabaseSync, today: string): McpServer {
       title: "Apply a plan",
       description:
         "Execute an approved plan. Call ONLY after the user explicitly confirms (approve=true). Every change is verified against the calendar after writing; the result reports exactly what was done.",
-      inputSchema: { plan_id: z.string(), approve: z.boolean().describe("Must be true; set only after the user said yes") },
+      inputSchema: {
+        plan_id: z.string(),
+        approve: z.boolean().describe("Must be true; set only after the user said yes"),
+        reject: z.boolean().optional().describe("true when the user declined the plan — records the decision, applies nothing"),
+      },
       outputSchema: {
         planId: z.string().optional(), plan_id: z.string().optional(),
         executed: z.array(z.object({ op: z.string(), title: z.string(), ok: z.boolean(), detail: z.string() })).optional(),
         allVerified: z.boolean().optional(), requires_approval: z.boolean().optional(),
       },
     },
-    wrap("apply_plan", (a: { plan_id: string; approve: boolean }) => impl.applyPlanTool(db, today, a.plan_id, a.approve)),
+    wrap("apply_plan", (a: { plan_id: string; approve: boolean; reject?: boolean }) => impl.applyPlanTool(db, today, a.plan_id, a.approve, a.reject ?? false)),
   );
 
   server.registerTool(
@@ -287,10 +312,12 @@ export function buildMcpServer(db: DatabaseSync, today: string): McpServer {
       outputSchema: {
         since: z.string(),
         outcomes: z.array(
-          z.object({ metric: z.string(), baseline: z.number(), observed: z.number(), verdict: z.string(), title: z.string() }).passthrough(),
+          z.object({ metric: z.string(), baseline: z.number().nullable(), observed: z.number(), verdict: z.string(), title: z.string() }).passthrough(),
         ),
         hypothesis: z.string().nullable().optional(),
         hypothesis_confirmed: z.boolean().optional(),
+        hypothesis_verdict: z.enum(["confirmed", "refuted", "partly", "inconclusive"]).optional(),
+        attribution: z.string().optional(),
       },
     },
     wrap("whats_changed", (a: { since?: string }) => impl.whatsChanged(db, today, a.since)),
@@ -421,6 +448,7 @@ export function createLifeOsHttpServer(db: DatabaseSync, today: string) {
         state.lastQuestionId = d.question?.id ?? state.lastQuestionId;
         state.lastQuestionText = d.question?.text ?? state.lastQuestionText;
         state.lastBriefingKey = briefingKey(r.data as Record<string, unknown>);
+        state.pendingOffer = null; // a new proactive turn supersedes any earlier offer
         state.history.push({ role: "assistant", text: r.text });
       }
       return json(res, 200, { quiet: r.data.quiet === true, text: r.text, data: r.data });

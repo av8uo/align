@@ -29,6 +29,10 @@ export interface EventRow {
   flexible: number; // 1 = plan solver may move it
   source: "seed" | "ics" | "lifeos_plan";
   reschedule_count: number;
+  /** Evidence of what actually happened. Only `done` counts as completed; `unknown` is never success or failure. */
+  completion: "scheduled" | "done" | "missed" | "unknown";
+  completion_source: "user_said" | "seed" | null;
+  completed_at: string | null;
 }
 
 export interface GoalRow {
@@ -52,6 +56,8 @@ export interface MemoryRow {
   status: "active" | "corrected" | "forgotten";
   created_at: string;
   updated_at: string;
+  /** Set on the newer memory when it explicitly replaces an older one. */
+  supersedes_id?: string | null;
 }
 
 export interface InsightRow {
