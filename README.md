@@ -156,7 +156,7 @@ Or point any MCP client (MCP Inspector, Claude Desktop, etc.) at `http://localho
 
 | `LIFEOS_LLM` | Who understands you | Needs |
 |---|---|---|
-| `anthropic` | Claude via the Claude API ([src/sim/anthropic.ts](src/sim/anthropic.ts)) — the configuration used in the demo video | `ANTHROPIC_API_KEY` (cents per conversation) |
+| `anthropic` | Claude via the Claude API ([src/sim/anthropic.ts](src/sim/anthropic.ts)) — the configuration used in the demo video (`ANTHROPIC_MODEL=claude-haiku-5-5` for ~3 s voice turns; default `claude-opus-5-5`) | `ANTHROPIC_API_KEY` (cents per conversation) |
 | `bedrock` | Claude on Amazon Bedrock ([src/sim/bedrock.ts](src/sim/bedrock.ts)) — the AWS Builder path | AWS credentials + Bedrock model access (see [docs/AWS_SETUP.md](docs/AWS_SETUP.md)) |
 | unset | the deterministic rules brain — a regex router over the same tools | nothing |
 

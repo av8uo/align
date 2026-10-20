@@ -23,7 +23,8 @@ import {
 import type { CallTool, OrchestratorReply, SessionState, ToolCallRecord } from "./orchestrator.js";
 import { absorb } from "./orchestrator.js";
 
-export const MODEL_ID = process.env.BEDROCK_MODEL_ID ?? "us.anthropic.claude-sonnet-4-5-20250929-v1:0";
+/** Read lazily: .env is loaded by the server after module import. */
+export const bedrockModelId = () => process.env.BEDROCK_MODEL_ID ?? "us.anthropic.claude-sonnet-4-5-20250929-v1:0";
 const MAX_TOOL_ROUNDS = 6;
 
 /** The host-model prompt: shared by every LLM that plays the Alexa+ role (Bedrock, Claude API). */
@@ -35,10 +36,12 @@ Rules:
 - If the briefing included a question and the user's message answers it, record it with check_in (pass question_id).
 - Voice-only parity: never reference screens or buttons; read at most 5 items aloud.
 - No technical jargon, tool names, IDs, or JSON in your spoken reply.
+- Plain spoken sentences only: no Markdown, no bullet or numbered lists, no bold, no headings — this is read aloud.
 - Say ONLY what tool results contain. Never describe, promise, or imply a change the tools did not return.
 - You cannot edit a plan. apply_plan applies the latest proposal EXACTLY as propose_plan returned it. If the user wants something different, call propose_plan again (after remember/check_in for new preferences) and read the new plan — or say plainly what cannot be done.
 - "Fix it" / "make a plan" means: call propose_plan now and read its result. Never answer it from memory.
-- After apply_plan, report what it verified — nothing more.`;
+- After apply_plan, report what it verified — nothing more.
+- Save a preference or fact once. If a tool answers "already noted", don't call it again and don't announce saving it.`;
 
 export interface McpToolDef {
   name: string;
@@ -139,6 +142,7 @@ export type BedrockBrain = ((text: string, state: SessionState, callTool: CallTo
 export function makeBedrockBrain(listTools: () => Promise<McpToolDef[]>, opts: BedrockBrainOptions = {}): BedrockBrain {
   const region = process.env.AWS_REGION ?? "us-east-1";
   const circuit = opts.circuit ?? new BedrockCircuit();
+  const modelId = bedrockModelId();
   const log = opts.log ?? ((s: string) => console.warn(s));
   const converse =
     opts.converse ??
@@ -176,7 +180,7 @@ export function makeBedrockBrain(listTools: () => Promise<McpToolDef[]>, opts: B
       let res: ConverseCommandOutput;
       try {
         res = await converse({
-          modelId: MODEL_ID,
+          modelId,
           system: [{ text: SYSTEM }],
           messages,
           toolConfig: { tools: await tools() },
@@ -236,6 +240,6 @@ export function makeBedrockBrain(listTools: () => Promise<McpToolDef[]>, opts: B
     return { reply: "That took more steps than I expected — here's where I got to.", toolCalls, brain: "bedrock" };
   } as BedrockBrain;
 
-  brain.status = () => ({ ...circuit.status(), model: MODEL_ID, region });
+  brain.status = () => ({ ...circuit.status(), model: modelId, region });
   return brain;
 }

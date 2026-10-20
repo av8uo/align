@@ -13,7 +13,8 @@ import { SYSTEM, type McpToolDef } from "./bedrock.js";
 import type { CallTool, OrchestratorReply, SessionState, ToolCallRecord } from "./orchestrator.js";
 import { absorb } from "./orchestrator.js";
 
-export const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL ?? "claude-opus-5-5";
+/** Read lazily: .env is loaded by the server after module import. */
+export const anthropicModel = () => process.env.ANTHROPIC_MODEL ?? "claude-opus-5-5";
 const MAX_TOOL_ROUNDS = 6;
 
 export function toAnthropicTools(tools: McpToolDef[]): Anthropic.Tool[] {
@@ -40,6 +41,7 @@ export type AnthropicBrain = ((text: string, state: SessionState, callTool: Call
 
 export function makeAnthropicBrain(listTools: () => Promise<McpToolDef[]>, opts: AnthropicBrainOptions = {}): AnthropicBrain {
   const configured = Boolean(opts.create || process.env.ANTHROPIC_API_KEY);
+  const model = anthropicModel();
   const log = opts.log ?? ((s: string) => console.warn(s));
   const create =
     opts.create ??
@@ -70,7 +72,7 @@ export function makeAnthropicBrain(listTools: () => Promise<McpToolDef[]>, opts:
       let res: Anthropic.Message;
       try {
         res = await create({
-          model: ANTHROPIC_MODEL,
+          model,
           max_tokens: 2048,
           system: SYSTEM,
           tools: await tools(),
@@ -123,6 +125,6 @@ export function makeAnthropicBrain(listTools: () => Promise<McpToolDef[]>, opts:
     return { reply: "That took more steps than I expected — here's where I got to.", toolCalls, brain: "anthropic" };
   } as AnthropicBrain;
 
-  brain.status = () => ({ provider: "anthropic", model: ANTHROPIC_MODEL, configured });
+  brain.status = () => ({ provider: "anthropic", model, configured });
   return brain;
 }
