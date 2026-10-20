@@ -340,7 +340,7 @@ export function checkIn(
     ? `Logged. You're ${pacing}.`
     : completionNote
       ? `${completionNote}${measured.length ? ` ${measured.map((m) => `${m.metric.replace("_adherence", "")}: ${m.verdict}`).join(", ")}.` : ""}`
-      : "Got it — I've noted that and updated my understanding.";
+      : "Noted — I've added that to what I know about you.";
   return {
     text,
     data: { memory_id: memoryId, pacing, engine_refreshed: true, completions_recorded: marked, outcomes_measured: summary.outcomesMeasured },

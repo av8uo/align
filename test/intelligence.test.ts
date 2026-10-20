@@ -17,6 +17,7 @@ import { g6Trend, runDetectors } from "../src/engine/detectors.js";
 import { remember, reviewMemory, parseCompletionAnswer, getDailyBriefing } from "../src/tools/impl.js";
 import { addDays } from "../src/engine/time.js";
 import { lifeBalance } from "../src/engine/balance.js";
+import { parsePreference } from "../src/engine/preferences.js";
 
 const fresh = () => {
   const db = new DatabaseSync(":memory:");
@@ -311,6 +312,20 @@ describe("6. longitudinal reasoning", () => {
     const gym = plan.changes.filter((c) => c.title === "Gym");
     expect(gym.length).toBeGreaterThan(0);
     for (const g of gym) expect(g.start).toContain("T07:00");
+  });
+
+  it("'I hate my morning routine' is NOT a scheduling preference; 'mornings work better for me' is", () => {
+    expect(parsePreference("Actually, I hate my morning routine.")).toBeNull();
+    expect(parsePreference("I hate the morning commute")).toBeNull();
+    expect(parsePreference("Mornings work better for me now")).toMatchObject({ subject: null, time: "morning", polarity: "like" });
+    expect(parsePreference("Evenings don't work for me")).toMatchObject({ subject: null, time: "evening", polarity: "dislike" });
+    expect(parsePreference("I hate morning workouts")).toMatchObject({ time: "morning", polarity: "dislike" });
+    // Stored as a plain note, the sentence does not move any session to the evening.
+    const db = fresh();
+    remember(db, DEMO_TODAY, "Actually, I hate my morning routine.", "preference");
+    const r = runEngine(db, DEMO_TODAY);
+    const plan = proposePlan(db, r.insightIds[0]!, DEMO_TODAY);
+    for (const g of plan.changes.filter((c) => c.title === "Gym")) expect(g.start).toContain("T07:00");
   });
 
   it("a third-person paraphrase from an LLM host ('The user hates morning workouts.') is understood and supersedes/dedupes like the original", () => {
