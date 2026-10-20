@@ -78,18 +78,19 @@ describe("what would help", () => {
 });
 
 describe("proactive instruction to the host model", () => {
-  it("lists every engine-supplied 'what would help' step with its evidence and forbids added advice", () => {
+  it("supplies the engine's steps as the ONLY allowed advice and asks for a short, step-first opening", () => {
     const db = fresh();
     const b = getDailyBriefing(db, DEMO_TODAY);
     const help = (b.data as { help: Array<{ line: string }> }).help;
     expect(help.length).toBe(2);
     const instruction = proactiveInstruction(b.text, help);
     for (const h of help) expect(instruction).toContain(`- ${h.line}`);
-    expect(instruction).toMatch(/Keep EACH of them, with its numbers and its specific step/);
-    expect(instruction).toMatch(/do not add any advice or step that is not listed below/);
+    expect(instruction).toMatch(/use ONLY these; never add advice of your own/);
+    expect(instruction).toMatch(/ONE next step that matters most to the user's top-ranked value/);
+    expect(instruction).toMatch(/2–3 spoken sentences total/);
     expect(instruction).toContain(b.text); // the computed briefing travels with it, unchanged
     // Without help lines, no step block is injected.
-    expect(proactiveInstruction("Here's your briefing.", [])).not.toContain("next steps come from the engine");
+    expect(proactiveInstruction("Here's your briefing.", [])).not.toContain("Next steps the engine derived");
   });
 });
 

@@ -93,12 +93,15 @@ export function buildContext(db: DatabaseSync, state: SessionState, text: string
  */
 export function proactiveInstruction(computedText: string, help: Array<{ line: string }> = []): string {
   const steps = help.length
-    ? `\n\nThese next steps come from the engine's evidence. Keep EACH of them, with its numbers and its specific step (the slot, the ask), in your own words but not weakened or dropped:\n${help.map((h) => `- ${h.line}`).join("\n")}`
+    ? `\n\nNext steps the engine derived from evidence (use ONLY these; never add advice of your own):\n${help.map((h) => `- ${h.line}`).join("\n")}`
     : "";
   return (
-    `(Proactive turn — you are speaking first, unprompted. Say the following briefing in your own words, in 2–5 spoken sentences. Keep every fact and number, keep the hedge if there is one, and end with the question exactly as written if there is one. Do not call tools, do not greet with "Here's your briefing", and do not add any advice or step that is not listed below.)` +
+    `(Proactive turn — you speak first, unprompted, like a coach who has been watching the week: short and specific, not a report. ` +
+    `Open with the ONE next step that matters most to the user's top-ranked value (family first if it is there) — what and why, in one breath, with its numbers. ` +
+    `Then at most one other item from the briefing, in a few words. If there is a question at the end of the briefing, ask it last, lightly, in natural words that keep its exact meaning (same person, same topic) — never press for an answer or mention that it went unanswered before. ` +
+    `Do NOT open with the headline sentence verbatim, do NOT list every number, do NOT say "Here's your briefing", do NOT call tools. If a plan is on offer, mention it in five words. 2–3 spoken sentences total; the user can ask for the rest.)` +
     steps +
-    `\n\nBriefing:\n${computedText}`
+    `\n\nBriefing (full computed content, for reference):\n${computedText}`
   );
 }
 

@@ -207,6 +207,54 @@ export function scoreGap(g: Pick<GapDraft, "importance" | "uncertainty" | "lever
 /** Below this, asking is not worth the interruption: no question is a valid outcome. */
 export const ASK_THRESHOLD = 0.12;
 
+/** An unanswered question comes back only after this long (and only once) unless the evidence changed. */
+export const REASK_AFTER_DAYS = 21;
+/** After this many unanswered asks, silence is the answer: the question waits for new evidence. */
+export const MAX_UNANSWERED_ASKS = 2;
+
+/**
+ * The parts of a gap's evidence that could justify asking again, as stored at
+ * ask time. Day counters ("daysSinceSignal") grow on their own and are not new evidence.
+ */
+export function evidenceFingerprint(evidence: string | Record<string, unknown> | null | undefined): string {
+  let e: Record<string, unknown> = {};
+  try {
+    e = typeof evidence === "string" ? (JSON.parse(evidence || "{}") as Record<string, unknown>) : evidence ?? {};
+  } catch { /* unreadable evidence counts as empty */ }
+  return JSON.stringify(Object.fromEntries(Object.keys(e).filter((k) => !/^days/i.test(k)).sort().map((k) => [k, e[k]])));
+}
+
+/**
+ * Did evidence ARRIVE since the question was asked? A new fact, a changed
+ * record, or a count that went up. A count going down (an insight became
+ * more certain) makes the question less needed, not more.
+ */
+export function hasNewEvidence(askedFingerprint: string, currentEvidence: Record<string, unknown>): boolean {
+  let before: Record<string, unknown>;
+  try { before = JSON.parse(askedFingerprint) as Record<string, unknown>; } catch { return false; }
+  const now = JSON.parse(evidenceFingerprint(currentEvidence)) as Record<string, unknown>;
+  return Object.entries(now).some(([k, v]) => {
+    if (!(k in before)) return true;
+    const was = before[k];
+    if (typeof v === "number" && typeof was === "number") return v > was;
+    return JSON.stringify(v) !== JSON.stringify(was);
+  });
+}
+
+/**
+ * May an unanswered question be asked again? Never-asked questions follow the
+ * weekly cooldown alone. Once asked and left unanswered, it returns only when
+ * new evidence arrived, or once after a meaningful interval — never on a loop.
+ */
+export function mayReask(unanswered: Array<{ asked_at: string | null; asked_evidence: string | null }>, currentEvidence: Record<string, unknown>, todayIso: string): boolean {
+  if (unanswered.length === 0) return true;
+  const last = unanswered.reduce((a, b) => ((a.asked_at ?? "") >= (b.asked_at ?? "") ? a : b));
+  if (last.asked_evidence !== null && hasNewEvidence(last.asked_evidence, currentEvidence)) return true;
+  // Calendar days: an ask stamped 08:00 three weeks ago is 21 days old today, not 20.67.
+  const since = last.asked_at ? daysBetween(dayStart(last.asked_at.slice(0, 10)), todayIso) : Infinity;
+  return unanswered.length < MAX_UNANSWERED_ASKS && since >= REASK_AFTER_DAYS;
+}
+
 interface StoredGap {
   id: string;
   kind: string;
@@ -266,6 +314,10 @@ export function pickQuestion(db: DatabaseSync, drafts: GapDraft[], today: string
       const since = row.last_asked_at ? daysBetween(row.last_asked_at, todayIso) : null;
       if (since !== null && since < 7) return null; // asked within the week
       if (row.declines >= 2) return null;
+      const unanswered = db
+        .prepare("SELECT asked_at, asked_evidence FROM questions WHERE gap_id=? AND status='asked'")
+        .all(d.id) as Array<{ asked_at: string | null; asked_evidence: string | null }>;
+      if (!mayReask(unanswered, d.evidence, todayIso)) return null; // no nagging
       return { d, score: scoreGap(d, row.declines, since) };
     })
     .filter((x): x is { d: GapDraft; score: number } => x !== null)

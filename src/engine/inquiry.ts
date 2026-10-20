@@ -6,6 +6,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import { newId } from "../core/ids.js";
 import { addDays, dayStart, daysBetween } from "./time.js";
+import { evidenceFingerprint } from "./gaps.js";
 
 interface GapRow {
   id: string;
@@ -29,7 +30,8 @@ export function scoreGap(gap: GapRow, blockedSeverity: number, today: string): n
 export function markAsked(db: DatabaseSync, questionId: string, now: string): void {
   const q = db.prepare("SELECT gap_id FROM questions WHERE id = ?").get(questionId) as { gap_id: string } | undefined;
   if (!q) return;
-  db.prepare("UPDATE questions SET status='asked', asked_at=? WHERE id=? AND status='pending'").run(now, questionId);
+  const gap = db.prepare("SELECT evidence FROM knowledge_gaps WHERE id=?").get(q.gap_id) as { evidence: string } | undefined;
+  db.prepare("UPDATE questions SET status='asked', asked_at=?, asked_evidence=? WHERE id=? AND status='pending'").run(now, evidenceFingerprint(gap?.evidence), questionId);
   db.prepare("UPDATE knowledge_gaps SET last_asked_at=? WHERE id=?").run(now, q.gap_id);
 }
 

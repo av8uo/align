@@ -187,6 +187,8 @@ const MIGRATIONS: string[] = [
   "ALTER TABLE outcomes ADD COLUMN window_end TEXT",
   "ALTER TABLE outcomes ADD COLUMN attribution TEXT NOT NULL DEFAULT 'association'",
   "ALTER TABLE memory_items ADD COLUMN supersedes_id TEXT",
+  // Anti-nagging: what the gap's evidence looked like when the question was asked.
+  "ALTER TABLE questions ADD COLUMN asked_evidence TEXT",
 ];
 
 export function migrate(db: DatabaseSync): void {

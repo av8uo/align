@@ -8,7 +8,8 @@ import { DatabaseSync } from "node:sqlite";
 import { migrate } from "../src/db/schema.js";
 import { seed, DEMO_TODAY } from "../src/db/seed.js";
 import { loadCtx, runEngine } from "../src/engine/engine.js";
-import { discoverGaps, findContradictions, partnerName, pickQuestion, scoreGap, syncGaps, ASK_THRESHOLD } from "../src/engine/gaps.js";
+import { discoverGaps, findContradictions, partnerName, pickQuestion, scoreGap, syncGaps, ASK_THRESHOLD, evidenceFingerprint, mayReask, REASK_AFTER_DAYS, MAX_UNANSWERED_ASKS } from "../src/engine/gaps.js";
+import { markAsked } from "../src/engine/inquiry.js";
 import { acceptance, effectiveness, measureOutcomes, recordCompletions, recordRejection, verdictFor } from "../src/engine/learn.js";
 import { proposePlan, rankCandidates } from "../src/engine/solver.js";
 import { applyPlan } from "../src/engine/executor.js";
@@ -74,6 +75,45 @@ describe("1. dynamic knowledge discovery", () => {
     db.prepare("UPDATE knowledge_gaps SET last_asked_at=? WHERE id='gap_stale_family'").run(`${DEMO_TODAY}T08:00:00`);
     const second = runEngine(db, addDays(DEMO_TODAY, 2));
     expect(second.question?.gapId).not.toBe("gap_stale_family");
+  });
+});
+
+describe("2b. no nagging: an unanswered personal question does not recur on a loop", () => {
+  const askFamily = (db: DatabaseSync, day: string) => {
+    const r = runEngine(db, day);
+    if (r.question?.gapId === "gap_stale_family") markAsked(db, r.question.id, `${day}T08:00:00`);
+    return r.question?.gapId ?? null;
+  };
+
+  it("asked and ignored: at most twice in ten weeks, never within the re-ask interval, never weekly", () => {
+    const db = fresh();
+    const askedOn: number[] = [];
+    for (let day = 0; day <= 70; day += 7) if (askFamily(db, addDays(DEMO_TODAY, day)) === "gap_stale_family") askedOn.push(day);
+    expect(askedOn[0]).toBe(0); // the first ask still happens
+    expect(askedOn).not.toContain(7); // the old weekly cooldown would have re-asked here
+    expect(askedOn.length).toBeLessThanOrEqual(MAX_UNANSWERED_ASKS);
+    for (let i = 1; i < askedOn.length; i++) expect(askedOn[i]! - askedOn[i - 1]!).toBeGreaterThanOrEqual(REASK_AFTER_DAYS);
+  });
+
+  it("the meaningful-interval rule allows exactly one more ask, then waits for new evidence", () => {
+    const today = `${DEMO_TODAY}T00:00:00`;
+    const ev = { lastEventAt: "2026-10-02T18:30:00", daysSinceSignal: 16, hedgedInsights: 1 };
+    const ask = (daysAgo: number) => ({ asked_at: `${addDays(DEMO_TODAY, -daysAgo)}T08:00:00`, asked_evidence: evidenceFingerprint(ev) });
+    expect(mayReask([ask(14)], ev, today)).toBe(false);
+    expect(mayReask([ask(REASK_AFTER_DAYS)], ev, today)).toBe(true);
+    expect(mayReask([ask(60), ask(REASK_AFTER_DAYS + 5)], ev, today)).toBe(false); // ignored twice: silence is the answer
+    expect(mayReask([ask(60), ask(REASK_AFTER_DAYS + 5)], { ...ev, hedgedInsights: 2 }, today)).toBe(true); // unless new evidence
+  });
+
+  it("new evidence justifies asking again; a day counter growing is not new evidence", () => {
+    const today = `${DEMO_TODAY}T00:00:00`;
+    const before = { lastEventAt: "2026-09-19T19:00:00", daysSinceSignal: 31, hedgedInsights: 1 };
+    const asked = [{ asked_at: `${addDays(DEMO_TODAY, -7)}T08:00:00`, asked_evidence: evidenceFingerprint(before) }];
+    expect(mayReask(asked, { ...before, daysSinceSignal: 38 }, today)).toBe(false);
+    expect(mayReask(asked, { ...before, hedgedInsights: 0 }, today)).toBe(false); // more certain = less reason to ask
+    expect(mayReask(asked, { ...before, hedgedInsights: 2 }, today)).toBe(true);
+    expect(mayReask(asked, { ...before, lastEventAt: "2026-10-16T19:00:00" }, today)).toBe(true);
+    expect(mayReask([], before, today)).toBe(true);
   });
 });
 
