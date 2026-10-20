@@ -61,6 +61,9 @@ export function absorb(state: SessionState, call: ToolCallRecord): void {
 
 // ---------------------------------------------------------------- rules brain
 const YES = /^(yes|yeah|yep|do it|apply|go ahead|confirm|sure|ok(ay)?)\b/i;
+const NO = /^(no|nope|not now|don'?t|no thanks|leave it|skip( it)?|later|maybe later)\b/i;
+const SMALLTALK = /^(hi|hello|hey|yo|hiya|thanks?( you)?( a lot)?|thank you|cheers|ok(ay)?|cool|great|nice|never ?mind|forget it|bye|good ?night|see you|yes|yeah|yep|no|nope|not now)[!. ]*$/i;
+const CAPABILITIES = 'I can brief you on your week, explain an insight, fix your schedule with your approval, or test a "what if". What would you like?';
 
 interface Route {
   match: RegExp;
@@ -71,7 +74,7 @@ const ROUTES: Route[] = [
   // What-if simulation: "what (happens) if I take a client dinner on Thursday at 7pm"
   {
     match:
-      /what (?:happens )?if i (?:take|accept|add|schedule) (?:an? )?(.+?)(?: on)? (monday|tuesday|wednesday|thursday|friday|saturday|sunday)(?: at (\d{1,2})(?::(\d{2}))?\s*(pm|am)?)?\??$/i,
+      /what (?:happens |would happen )?if i (?:take|accept|add|schedule|move|put|book|do|have|go to) (?:an? |the |my )?(.+?)(?: on| to)? (monday|tuesday|wednesday|thursday|friday|saturday|sunday)(?: at (\d{1,2})(?::(\d{2}))?\s*(pm|am)?)?\??$/i,
     run: (m) => {
       let h = m[3] ? Number(m[3]) : 19;
       const ap = m[5]?.toLowerCase();
@@ -111,6 +114,38 @@ async function rulesBrain(text: string, state: SessionState, callTool: CallTool)
     absorb(state, call);
     return say(call.text);
   }
+  // Declining a proposed plan is a decision, not a memory: nothing is applied.
+  if (state.planAwaitingApproval && NO.test(text.trim())) {
+    state.planAwaitingApproval = false;
+    return say('Okay — I\'ll leave your week as it is. Say "fix it" whenever you want the plan again.');
+  }
+  // Small talk and bare yes/no with nothing pending: conversation, never a memory,
+  // and never mistaken for the answer to Align's open question.
+  if (SMALLTALK.test(text.trim())) {
+    if (/^(thanks?|thank you|cheers)/i.test(text.trim())) return say("Any time.");
+    if (/^(bye|good ?night|see you)/i.test(text.trim())) return say("Good night. I'll keep an eye on the week and speak up only if something matters.");
+    if (/^(never ?mind|forget it)/i.test(text.trim())) return say("Okay, dropped.");
+    if (YES.test(text.trim())) return say('Nothing is waiting on a yes right now. Say "fix it" if you\'d like a plan for the week.');
+    if (NO.test(text.trim())) return say("Okay.");
+    return say(state.lastQuestionText ? `Hi. ${state.lastQuestionText}` : 'Hi. Ask for your briefing, or say "fix it" when you want a plan.');
+  }
+  if (/^(help|what can you do)\b/i.test(text.trim())) return say(CAPABILITIES);
+  // Direct calendar edits aren't a tool: be honest about how Align changes things.
+  if (/^(move|reschedule|cancel|shift|put|book|schedule)\b/i.test(text.trim()) && !/^what if/i.test(text)) {
+    return say('I don\'t edit your calendar on command — I propose a plan and apply it only after your yes. Say "fix it" and I\'ll include that, or ask "what if…" to see the cost first.');
+  }
+  // Forget by description: look the memory up, then delete that one item.
+  const forgetByText = text.match(/^forget (?:that |the |about )?(.+?)(?: thing| memory| one)?[.!?]*$/i);
+  if (forgetByText && !/^[a-z]+_[a-z0-9]+$/i.test(forgetByText[1]!)) {
+    const found = await callTool("review_memory", { filter: forgetByText[1]! });
+    calls.push(found);
+    const first = ((found.data?.memories as Array<{ id: string; content: string }> | undefined) ?? [])[0];
+    if (!first) return say("I don't hold a memory about that.");
+    const call = await callTool("forget", { memory_id: first.id });
+    calls.push(call);
+    absorb(state, call);
+    return say(`Forgotten: "${first.content.replace(/[.!]+$/, "")}".`);
+  }
   for (const route of ROUTES) {
     const m = text.match(route.match);
     if (!m) continue;
@@ -143,10 +178,16 @@ async function rulesBrain(text: string, state: SessionState, callTool: CallTool)
   // Questions aimed at Align ("can you listen?", "who are you?") are
   // conversation, not life facts — and not the answer to an open question.
   // Answer them without filing a memory.
-  const capabilities = 'I can brief you on your week, explain an insight, fix your schedule with your approval, or test a "what if". What would you like?';
   if (/\b(can|could|do|are|will|would) you (listen|hear)/i.test(text)) return say("I'm listening — go ahead.");
-  if (/\b(who|what) are you\b/i.test(text)) return say(`I'm Align — I keep a model of your whole life and speak up when something matters. ${capabilities}`);
-  if (/^(hey|hi|hello|ok|okay|so)?[,\s]*(can|could|do|are|will|would|what|who|how|why|where|when) you\b/i.test(text)) return say(capabilities);
+  if (/\b(who|what) are you\b/i.test(text)) return say(`I'm Align — I keep a model of your whole life and speak up when something matters. ${CAPABILITIES}`);
+  if (/^(hey|hi|hello|ok|okay|so)?[,\s]*(can|could|do|are|will|would|what|who|how|why|where|when) you\b/i.test(text)) return say(CAPABILITIES);
+  // Feelings are signal (recorded) — but deserve a human reply, not a receipt.
+  if (/\b(i'?m|i am|i feel|feeling) (so |really |completely |totally )?(exhausted|tired|drained|burnt out|burned out|stressed|overwhelmed|anxious|sad|low|down)\b/i.test(text)) {
+    const call = await callTool("check_in", state.lastQuestionId ? { content: text, question_id: state.lastQuestionId } : { content: text });
+    calls.push(call);
+    absorb(state, call);
+    return say('I\'m sorry it\'s been that heavy. I\'ve noted it. If you want, say "fix it" and I\'ll look for room in the week — nothing changes without your yes.');
+  }
   // Not a command: if Align asked something, this is the answer -> memory.
   if (state.lastQuestionId) {
     const call = await callTool("check_in", { content: text, question_id: state.lastQuestionId });
@@ -155,7 +196,7 @@ async function rulesBrain(text: string, state: SessionState, callTool: CallTool)
     return say(`${call.text} That helps me connect the dots — say "fix it" when you want a plan.`);
   }
   // Any other question with no open question of Align's to answer: conversation, not a memory.
-  if (/\?\s*$/.test(text)) return say(capabilities);
+  if (/\?\s*$/.test(text)) return say(CAPABILITIES);
   const call = await callTool("check_in", { content: text });
   calls.push(call);
   absorb(state, call);
