@@ -20,6 +20,19 @@
 
 > **Wording varies.** With the LLM host, Align phrases every reply itself from the tool results, so the quotes below are the *shape* of each beat, not a script to match. Each turn takes 4–9 s (the voice reply of the previous turn covers most of it) — wait for the reply before clicking the next chip.
 
+## ALTERNATIVE OPENING — "First meeting" (two-act video)
+If you prefer the video to start with Align as a **blank mind meeting a brand-new user** (recommended — it's the most human opening):
+
+**Act 1 — the interview (0:00–1:10).** Click **🆕 New user** → reload. Align speaks first: *"Hi — I'm Align. I don't know you yet…"* and asks who shares your life and what matters most. Answer naturally, 3–4 turns (family → health → money → work). On screen, watch its mind build itself: each answer becomes a goal or a memory, live. Say your real-ish answers or use the rehearsed ones:
+1. `I live with my wife Nora and our daughter Lina, she's 6. What matters most is real time with them — I work too much.`
+2. `For health, nothing regular. I'd like to run twice a week — mornings are impossible though.`
+3. `Money-wise I want to put 300 euros a month aside for Lina's studies.`
+**Caption:** `A blank mind, interviewing · every answer becomes a goal, a fact, or a preference — stored live, reviewable, deletable`
+
+**Act 2 — weeks later (1:10 onward).** Caption: `Three weeks later (seeded demo data — labeled)`. Click **↺ Reset** → reload → continue from Beat 1 below (the proactive briefing), compressing Beats 2–4 to fit 3:00: keep the preference→plan→verified chain and the week-later measurement; drop the what-if and Beat 5 cuts if over time.
+
+---
+
 ## Cold open — 0:00–0:12
 **Visual:** the simulator loading; the proactive briefing appears *by itself*.
 **VO (you, or a caption):**
