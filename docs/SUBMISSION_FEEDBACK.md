@@ -29,7 +29,7 @@ Everything below happened for real while building Align during the hackathon win
 ### AWS App Runner → ECS Express Mode + ECR + IAM
 - **Used for:** the public demo deployment — one idempotent script ([scripts/deploy-aws.ts](../scripts/deploy-aws.ts)) builds, pushes to ECR, provisions three least-privilege roles, creates the service, waits for healthy, and only prints a URL once `/healthz` answers over HTTPS.
 - **Worked well:** the "container in, HTTPS URL out, task role for credentials" shape is right for hackathon-to-production, and ECS Express Mode delivers it in a single `CreateExpressGatewayService` call (ALB, certificate, security groups, log group, autoscaling all managed). ECR push with scoped, repo-pinned permissions works.
-- **Needs work:** App Runner is **closed to new accounts**, but its error — `SubscriptionRequiredException: The AWS Access Key Id needs a subscription for the service` — reads like a **paywall**, not "this service is not available to you; use ECS Express Mode" (friction log F4). The caller-side IAM action set for Express Mode is only documented in a GitHub Action README, not in the ECS guide (F5).
+- **Needs work:** App Runner is **closed to new accounts**, but its error — `SubscriptionRequiredException: The AWS Access Key Id needs a subscription for the service` — reads like a **paywall**, not "this service is not available to you; use ECS Express Mode" (friction log F4). The caller-side IAM action set for Express Mode is only documented in a GitHub Action README, not in the ECS guide (F8).
 - **Again?** Yes — ECS Express Mode specifically.
 
 ### Node.js `node:sqlite`
@@ -99,6 +99,15 @@ Everything below happened for real while building Align during the hackathon win
 - **Severity:** Medium. **Suggestion:** first-class Windows (or WSL-official) instructions.
 
 ---
+
+### F8 — ECS Express Mode: the deploying user's permissions are undocumented (ECS)
+- **Task:** port the deploy to ECS Express Mode with a least-privilege IAM user (no AdministratorAccess), after App Runner turned out to be closed to new accounts.
+- **Steps:** read the Express Mode developer guide, the `CreateExpressGatewayService` API reference and the infrastructure-role managed policy → all describe the *roles* ECS assumes, none lists what the *caller* needs → preflight failed on `UnauthorizedOperation: ec2:DescribeVpcs`; the full action list (`ecs:CreateCluster`, `ecs:RegisterTaskDefinition`, `ecs:CreateExpressGatewayService`, `ecs:DescribeExpressGatewayService`, `ecs:ListServiceDeployments`, `ecs:DescribeServiceDeployments`, `ecs:TagResource`, `iam:PassRole` to `ecs.amazonaws.com` **and** `ecs-tasks.amazonaws.com`, `iam:CreateServiceLinkedRole` for ECS) was eventually assembled from the `aws-actions/amazon-ecs-deploy-express-service` README and a third-party CloudFormation reference.
+- **Expected:** a "permissions for the user creating an Express service" section next to the role docs, as every other ECS guide page has.
+- **Actual:** not in the developer guide; found by trial and error plus a GitHub Action README.
+- **Severity:** Medium (High for anyone refusing AdministratorAccess).
+- **Workaround:** the 9-statement policy in our repo (`docs/aws-private/deploy-user-policy.json`, private) — written once, verified by the script's `--check` preflight.
+- **Suggestion:** publish the minimal caller policy for `create-express-gateway-service` in the Express Mode guide, including the two PassRole service principals.
 
 ## Part 3 — Feature requests
 

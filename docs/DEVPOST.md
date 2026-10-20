@@ -68,7 +68,7 @@ Real calendar OAuth; multi-person households on Voice ID (schema is ready); the 
 `typescript` · `node.js` · `model-context-protocol` · `node:sqlite` · `zod` · `vitest` · `claude` · `amazon-bedrock` · `amazon-ecs` · `aws-fargate` · `amazon-ecr` · `docker` · `web-speech-api`
 
 ## Product feedback (form field)
-Full version in the repo: [docs/SUBMISSION_FEEDBACK.md](SUBMISSION_FEEDBACK.md) — product feedback on all five tools used (Alexa+ MCP Toolkit & docs, MCP TypeScript SDK, Amazon Bedrock, App Runner → ECS Express Mode/ECR/IAM, node:sqlite), **seven friction-log entries with verbatim errors**, and six feature requests led by: an add-on-initiated proactive-turns API for Alexa+ MCP add-ons.
+Full version in the repo: [docs/SUBMISSION_FEEDBACK.md](SUBMISSION_FEEDBACK.md) — product feedback on all five tools used (Alexa+ MCP Toolkit & docs, MCP TypeScript SDK, Amazon Bedrock, App Runner → ECS Express Mode/ECR/IAM, node:sqlite), **eight friction-log entries with verbatim errors**, and six feature requests led by: an add-on-initiated proactive-turns API for Alexa+ MCP add-ons.
 
 ## If the project existed before
 It did not — every line was written inside the submission window (first commit Oct 19, 2026).
