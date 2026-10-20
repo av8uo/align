@@ -193,3 +193,60 @@ describe("rules brain: small talk, declines, direct edits, forget-by-text, what-
     expect(out.reply).toMatch(/^I'm sorry it's been that heavy/);
   });
 });
+
+describe("rules brain: review fixes", () => {
+  const withQuestion = () => { const s = newSession(); s.lastQuestionId = "q_1"; s.lastQuestionText = "How are things with Sam lately?"; return s; };
+  const recorder = (log: Array<{ name: string; args: Record<string, unknown> }>) => async (name: string, args: Record<string, unknown>): Promise<ToolCallRecord> => {
+    log.push({ name, args });
+    return { name, args, text: "ok", data: { insights: [{ id: "ins_1" }], question: null }, isError: false };
+  };
+
+  it("records a free-text answer containing route words (why, plan, goals) as the answer", async () => {
+    for (const answer of ["Honestly I don't know why, we barely talk.", "We only talk about the kids' goals and my work plan.", "Fine overall, I guess."]) {
+      const log: Array<{ name: string; args: Record<string, unknown> }> = [];
+      const s = withQuestion();
+      await orchestrate(answer, s, { callTool: recorder(log) });
+      expect(log.map((c) => c.name)).toEqual(["check_in"]);
+      expect(log[0]!.args).toMatchObject({ question_id: "q_1", content: answer });
+    }
+  });
+
+  it("still routes real commands: 'why?', 'fix it', 'how am I doing on my goals?', 'how am I doing this week?'", async () => {
+    const s = newSession();
+    s.lastInsightId = "ins_1";
+    const log: Array<{ name: string; args: Record<string, unknown> }> = [];
+    for (const cmd of ["Why?", "Fix it", "How am I doing on my goals?", "How am I doing this week?"]) await orchestrate(cmd, s, { callTool: recorder(log) });
+    expect(log.map((c) => c.name)).toEqual(["get_insight", "propose_plan", "get_goal_progress", "get_daily_briefing"]);
+  });
+
+  it("logs 'Put 450 in the house fund' as savings, not a calendar edit", async () => {
+    const log: Array<{ name: string; args: Record<string, unknown> }> = [];
+    await orchestrate("Put 450 in the house fund", newSession(), { callTool: recorder(log) });
+    expect(log[0]).toMatchObject({ name: "check_in", args: { goal_id: "goal_house", amount: 450 } });
+  });
+
+  it("records a bare yes/no as the answer while a question is open", async () => {
+    const log: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const s = withQuestion();
+    await orchestrate("No", s, { callTool: recorder(log) });
+    expect(log[0]).toMatchObject({ name: "check_in", args: { question_id: "q_1", content: "No" } });
+  });
+
+  it("refuses to forget when the description matches several memories", async () => {
+    const log: string[] = [];
+    const callTool = async (name: string, args: Record<string, unknown>): Promise<ToolCallRecord> => {
+      log.push(name);
+      return { name, args, text: "", data: { memories: [{ id: "a", content: "Felt great after morning gym." }, { id: "b", content: "I hate morning gym." }] }, isError: false };
+    };
+    const out = await orchestrate("Forget gym", newSession(), { callTool });
+    expect(log).toEqual(["review_memory"]);
+    expect(out.reply).toMatch(/^I have 2 memories mentioning that: "Felt great after morning gym"; "I hate morning gym"\./);
+  });
+
+  it("does not read 'I'm low on cash' as a feeling", async () => {
+    const log: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const out = await orchestrate("I'm low on cash this month", newSession(), { callTool: recorder(log) });
+    expect(log.map((c) => c.name)).toEqual(["check_in"]);
+    expect(out.reply).not.toMatch(/sorry/i);
+  });
+});

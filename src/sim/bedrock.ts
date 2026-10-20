@@ -108,7 +108,7 @@ export class BedrockCircuit {
     // Daily quotas reset on the UTC day boundary; per-minute ones within a minute.
     const until = info.kind === "day" ? Math.max(nextUtcMidnight(now), now + 60_000) : info.kind === "minute" ? now + 60_000 : now + 30_000;
     this.openUntil = until;
-    this.reason = `${info.name}: ${info.message}`;
+    this.reason = `${info.name}: ${info.message}${info.kind === "day" ? " (daily window assumed to reset at 00:00 UTC)" : ""}`;
     this.trips += 1;
     return until - now;
   }
@@ -185,6 +185,14 @@ export function makeBedrockBrain(listTools: () => Promise<McpToolDef[]>, opts: B
             `bedrock throttled (${info.name}, quota window: per ${info.kind}, requestId=${info.requestId ?? "?"}): ` +
               `circuit open for ${Math.round(ms / 60_000)} min — rules brain only until then`,
           );
+        }
+        // Tools already ran this turn: their effects are real (a plan may be
+        // applied). Finish the turn from their own words rather than throwing —
+        // a throw would make the orchestrator re-run the rules brain on the
+        // same utterance and execute those tools a second time.
+        if (toolCalls.length > 0) {
+          log(`bedrock failed mid-turn after ${toolCalls.length} tool call(s) (${info.name}); finishing from tool results`);
+          return { reply: toolCalls.map((c) => c.text).filter(Boolean).join(" "), toolCalls, brain: "bedrock" };
         }
         throw e;
       }

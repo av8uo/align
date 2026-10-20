@@ -112,3 +112,27 @@ describe("Bedrock brain with the circuit", () => {
     expect(listed).toBe(1);
   });
 });
+
+describe("Bedrock brain: failure after tools already ran", () => {
+  it("finishes the turn from tool results instead of throwing, so the fallback never re-runs the tools", async () => {
+    let sent = 0;
+    const toolUse = (): ConverseCommandOutput =>
+      ({ output: { message: { role: "assistant", content: [{ toolUse: { toolUseId: "t1", name: "apply_plan", input: { plan_id: "plan_1", approve: true } } }] } }, stopReason: "tool_use", usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 }, metrics: { latencyMs: 1 }, $metadata: {} }) as ConverseCommandOutput;
+    const brain = makeBedrockBrain(tools, {
+      converse: async () => {
+        sent += 1;
+        if (sent === 1) return toolUse();
+        throw throttle("Too many tokens per day, please wait before trying again.");
+      },
+      log: () => {},
+    });
+    const ran: string[] = [];
+    const out = await orchestrate("yes, do it", newSession(), {
+      callTool: async (name, args) => { ran.push(name); return { name, args, text: "Done and verified — all 8 changes are on the calendar.", data: {}, isError: false }; },
+      bedrock: brain,
+    });
+    expect(ran).toEqual(["apply_plan"]);
+    expect(out).toMatchObject({ brain: "bedrock", reply: "Done and verified — all 8 changes are on the calendar." });
+    expect(brain.status().open).toBe(true);
+  });
+});

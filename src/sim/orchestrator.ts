@@ -63,6 +63,7 @@ export function absorb(state: SessionState, call: ToolCallRecord): void {
 const YES = /^(yes|yeah|yep|do it|apply|go ahead|confirm|sure|ok(ay)?)\b/i;
 const NO = /^(no|nope|not now|don'?t|no thanks|leave it|skip( it)?|later|maybe later)\b/i;
 const SMALLTALK = /^(hi|hello|hey|yo|hiya|thanks?( you)?( a lot)?|thank you|cheers|ok(ay)?|cool|great|nice|never ?mind|forget it|bye|good ?night|see you|yes|yeah|yep|no|nope|not now)[!. ]*$/i;
+const ANSWERED = "Thank you for telling me — I've noted it, and it changes how sure I am about what's going on. Say \"fix it\" when you want a plan.";
 const CAPABILITIES = 'I can brief you on your week, explain an insight, fix your schedule with your approval, or test a "what if". What would you like?';
 
 interface Route {
@@ -87,11 +88,13 @@ const ROUTES: Route[] = [
     },
   },
   // Self-reported savings progress ("I put in 450") -> logged against the house fund.
-  { match: /(?:put in|saved|deposited|transferred)\s*\$?(\d+)/i, run: (m) => ({ name: "check_in", args: { content: m.input ?? m[0]!, goal_id: "goal_house", amount: Number(m[1]) } }) },
-  { match: /briefing|good morning|catch me up|how('s| is) my (week|day)|how am i doing|what('s| is) (up|new)/i, run: () => ({ name: "get_daily_briefing", args: {} }) },
-  { match: /balance|how('s| is) my life|am i balanced|overall/i, run: () => ({ name: "get_life_balance", args: {} }) },
-  { match: /did it work|how did (my|the) week go|what('s| has) changed|results/i, run: () => ({ name: "whats_changed", args: {} }) },
-  { match: /goal|streak|progress/i, run: () => ({ name: "get_goal_progress", args: {} }) },
+  { match: /(?:put in|put|saved|deposited|transferred|added)\s*\$?(\d+)/i, run: (m) => ({ name: "check_in", args: { content: m.input ?? m[0]!, goal_id: "goal_house", amount: Number(m[1]) } }) },
+  // Routes are anchored or phrase-level on purpose: a free-text answer to
+  // Align's question ("I don't know why, we barely talk") must not trip a route.
+  { match: /\b(my )?goals?\b|\bstreaks?\b|goal progress|how am i doing on/i, run: () => ({ name: "get_goal_progress", args: {} }) },
+  { match: /briefing|good morning|catch me up|how('s| is) my (week|day)|how am i doing( this week| today)?\??$|^what('s| is) (up|new)/i, run: () => ({ name: "get_daily_briefing", args: {} }) },
+  { match: /\b(life |my )balance\b|how('s| is) my life|am i balanced|how am i (doing )?overall|^overall\??$/i, run: () => ({ name: "get_life_balance", args: {} }) },
+  { match: /did it work|how did (my|the) week go|what('s| has) changed|\bresults\b/i, run: () => ({ name: "whats_changed", args: {} }) },
   { match: /remember (that )?(.+)/i, run: (m) => ({ name: "remember", args: { content: m[2]!, kind: "fact" } }) },
   // Spoken likes/dislikes become durable preferences the planner honors next time.
   {
@@ -100,8 +103,11 @@ const ROUTES: Route[] = [
   },
   { match: /forget ([a-z]+_[a-z0-9]+)/i, run: (m) => ({ name: "forget", args: { memory_id: m[1]! } }) },
   { match: /what do you know about me|show (your |my )?memor/i, run: () => ({ name: "review_memory", args: {} }) },
-  { match: /tell me more|why|evidence|explain/i, run: (_m, s) => (s.lastInsightId ? { name: "get_insight", args: { insight_id: s.lastInsightId } } : null) },
-  { match: /fix|plan|suggest|help me change|sort (it|this) out/i, run: (_m, s) => (s.lastInsightId ? { name: "propose_plan", args: { insight_id: s.lastInsightId } } : null) },
+  { match: /^(tell me more|why|explain|show me the evidence|what('s| is) the evidence)\b/i, run: (_m, s) => (s.lastInsightId ? { name: "get_insight", args: { insight_id: s.lastInsightId } } : null) },
+  {
+    match: /\b(fix (it|this|that|my (week|schedule))|make (me )?a plan|plan (it|my week)|suggest (something|changes|a plan)|help me change|sort (it|this) out)\b/i,
+    run: (_m, s) => (s.lastInsightId ? { name: "propose_plan", args: { insight_id: s.lastInsightId } } : null),
+  },
 ];
 
 async function rulesBrain(text: string, state: SessionState, callTool: CallTool): Promise<OrchestratorReply> {
@@ -122,6 +128,13 @@ async function rulesBrain(text: string, state: SessionState, callTool: CallTool)
   // Small talk and bare yes/no with nothing pending: conversation, never a memory,
   // and never mistaken for the answer to Align's open question.
   if (SMALLTALK.test(text.trim())) {
+    // A bare yes/no while Align's question is open IS the answer — record it.
+    if (state.lastQuestionId && (YES.test(text.trim()) || NO.test(text.trim()))) {
+      const call = await callTool("check_in", { content: text, question_id: state.lastQuestionId });
+      calls.push(call);
+      absorb(state, call);
+      return say(ANSWERED);
+    }
     if (/^(thanks?|thank you|cheers)/i.test(text.trim())) return say("Any time.");
     if (/^(bye|good ?night|see you)/i.test(text.trim())) return say("Good night. I'll keep an eye on the week and speak up only if something matters.");
     if (/^(never ?mind|forget it)/i.test(text.trim())) return say("Okay, dropped.");
@@ -131,7 +144,8 @@ async function rulesBrain(text: string, state: SessionState, callTool: CallTool)
   }
   if (/^(help|what can you do)\b/i.test(text.trim())) return say(CAPABILITIES);
   // Direct calendar edits aren't a tool: be honest about how Align changes things.
-  if (/^(move|reschedule|cancel|shift|put|book|schedule)\b/i.test(text.trim()) && !/^what if/i.test(text)) {
+  const savingsUpdate = /(put in|put|saved|deposited|transferred)\s*\$?\d+|\$?\d+ (in|into|to|toward) the/i.test(text);
+  if (/^(move|reschedule|cancel|shift|put|book|schedule)\b/i.test(text.trim()) && !/^what if/i.test(text) && !savingsUpdate) {
     return say('I don\'t edit your calendar on command — I propose a plan and apply it only after your yes. Say "fix it" and I\'ll include that, or ask "what if…" to see the cost first.');
   }
   // Forget by description: look the memory up, then delete that one item.
@@ -139,12 +153,28 @@ async function rulesBrain(text: string, state: SessionState, callTool: CallTool)
   if (forgetByText && !/^[a-z]+_[a-z0-9]+$/i.test(forgetByText[1]!)) {
     const found = await callTool("review_memory", { filter: forgetByText[1]! });
     calls.push(found);
-    const first = ((found.data?.memories as Array<{ id: string; content: string }> | undefined) ?? [])[0];
-    if (!first) return say("I don't hold a memory about that.");
-    const call = await callTool("forget", { memory_id: first.id });
+    const matches = (found.data?.memories as Array<{ id: string; content: string }> | undefined) ?? [];
+    const quote = (c: string) => `"${c.replace(/[.!]+$/, "")}"`;
+    if (matches.length === 0) return say("I don't hold a memory about that.");
+    // Deleting is irreversible: only act when the description is unambiguous.
+    if (matches.length > 1) {
+      return say(`I have ${matches.length} memories mentioning that: ${matches.slice(0, 3).map((m) => quote(m.content)).join("; ")}. Say "forget" with the exact words of the one to delete.`);
+    }
+    const call = await callTool("forget", { memory_id: matches[0]!.id });
     calls.push(call);
     absorb(state, call);
-    return say(`Forgotten: "${first.content.replace(/[.!]+$/, "")}".`);
+    return say(`Forgotten: ${quote(matches[0]!.content)}.`);
+  }
+  // While Align's question is open, a sentence-length statement is the answer —
+  // even if it happens to contain a route word ("…the kids' goals and my plan").
+  // Short, command-shaped turns ("fix it", "why?") still route normally.
+  const wordCount = text.trim().split(/\s+/).length;
+  const commandShaped = /^(what|how|why|tell|show|fix|give|can|could|did|do|is|are|remember|forget|help)\b/i.test(text.trim());
+  if (state.lastQuestionId && wordCount >= 6 && !commandShaped) {
+    const call = await callTool("check_in", { content: text, question_id: state.lastQuestionId });
+    calls.push(call);
+    absorb(state, call);
+    return say(ANSWERED);
   }
   for (const route of ROUTES) {
     const m = text.match(route.match);
@@ -182,7 +212,7 @@ async function rulesBrain(text: string, state: SessionState, callTool: CallTool)
   if (/\b(who|what) are you\b/i.test(text)) return say(`I'm Align — I keep a model of your whole life and speak up when something matters. ${CAPABILITIES}`);
   if (/^(hey|hi|hello|ok|okay|so)?[,\s]*(can|could|do|are|will|would|what|who|how|why|where|when) you\b/i.test(text)) return say(CAPABILITIES);
   // Feelings are signal (recorded) — but deserve a human reply, not a receipt.
-  if (/\b(i'?m|i am|i feel|feeling) (so |really |completely |totally )?(exhausted|tired|drained|burnt out|burned out|stressed|overwhelmed|anxious|sad|low|down)\b/i.test(text)) {
+  if (/\b(i'?m|i am|i feel|feeling) (so |really |completely |totally )?(exhausted|tired|drained|burnt out|burned out|stressed|overwhelmed|anxious|sad|miserable|depressed)\b/i.test(text)) {
     const call = await callTool("check_in", state.lastQuestionId ? { content: text, question_id: state.lastQuestionId } : { content: text });
     calls.push(call);
     absorb(state, call);
@@ -193,7 +223,7 @@ async function rulesBrain(text: string, state: SessionState, callTool: CallTool)
     const call = await callTool("check_in", { content: text, question_id: state.lastQuestionId });
     calls.push(call);
     absorb(state, call);
-    return say(`${call.text} That helps me connect the dots — say "fix it" when you want a plan.`);
+    return say(ANSWERED);
   }
   // Any other question with no open question of Align's to answer: conversation, not a memory.
   if (/\?\s*$/.test(text)) return say(CAPABILITIES);

@@ -254,6 +254,7 @@ async function main() {
 
   // ---- wait for the deployment, then for the public URL to answer ----
   let endpoint: string | null = null;
+  let lastDeployment = "pending";
   for (let i = 0; i < 45; i++) {
     await sleep(20_000);
     const s = await describeService(serviceArn);
@@ -273,10 +274,12 @@ async function main() {
       if (/Not retried/.test((e as Error).message)) throw e;
       deployment = `(deployment status unavailable: ${(e as Error).name})`;
     }
-    log(`service ${s?.status?.statusCode ?? "?"} · deployment ${deployment || "pending"} · ${endpoint ? `https://${endpoint}` : "no endpoint yet"}`);
+    lastDeployment = deployment || "pending";
+    log(`service ${s?.status?.statusCode ?? "?"} · deployment ${lastDeployment} · ${endpoint ? `https://${endpoint}` : "no endpoint yet"}`);
     if (endpoint && /SUCCESSFUL/.test(deployment)) break;
   }
-  if (!endpoint) throw new Error("timed out (15 min) waiting for the Express service endpoint");
+  if (!endpoint) throw new Error(`timed out (15 min): no endpoint yet (last deployment status: ${lastDeployment})`);
+  if (!/SUCCESSFUL/.test(lastDeployment)) throw new Error(`timed out (15 min): endpoint https://${endpoint} exists but the deployment is still ${lastDeployment} — check ECS console → Clusters → default → lifeos`);
 
   for (let i = 0; i < 30; i++) {
     try {
