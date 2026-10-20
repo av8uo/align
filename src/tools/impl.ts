@@ -309,7 +309,10 @@ export function getGoalProgress(db: DatabaseSync, today: string, args: { goal_id
   });
 
   if (rows.length === 0) return { text: "No matching goals.", data: { goals: [] } };
-  const line = (r: (typeof rows)[number]) => `${keywordOf(r.title)} ${r.actual} of ${r.target}`;
+  const line = (r: (typeof rows)[number]) =>
+    r.domain === "finance"
+      ? `house fund $${r.actual} of $${r.target} this month`
+      : `${keywordOf(r.title)} ${r.actual} of ${r.target}`;
   const behind = rows.filter((r) => r.actual < r.target);
   const text =
     behind.length === 0
