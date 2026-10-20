@@ -155,7 +155,7 @@ export function buildMcpServer(db: DatabaseSync, today: string): McpServer {
         content: z.string(),
         kind: z.enum(["fact", "preference", "commitment"]).default("fact"),
       },
-      outputSchema: { memory_id: z.string(), kind: z.string(), content: z.string() },
+      outputSchema: { memory_id: z.string(), kind: z.string(), content: z.string(), duplicate: z.boolean().optional() },
     },
     wrap("remember", (a: { content: string; kind?: "fact" | "preference" | "commitment" }) =>
       impl.remember(db, today, a.content, a.kind ?? "fact"),
@@ -410,9 +410,10 @@ export function createLifeOsHttpServer(db: DatabaseSync, today: string) {
       if (sid && r.data.quiet !== true) {
         const state = sessions.get(sid) ?? newSession();
         sessions.set(sid, state);
-        const d = r.data as { insights?: Array<{ id: string }>; question?: { id: string } | null };
+        const d = r.data as { insights?: Array<{ id: string }>; question?: { id: string; text?: string } | null };
         state.lastInsightId = d.insights?.[0]?.id ?? state.lastInsightId;
         state.lastQuestionId = d.question?.id ?? state.lastQuestionId;
+        state.lastQuestionText = d.question?.text ?? state.lastQuestionText;
         state.history.push({ role: "assistant", text: r.text });
       }
       return json(res, 200, { quiet: r.data.quiet === true, text: r.text, data: r.data });

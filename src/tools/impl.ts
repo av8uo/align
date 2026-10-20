@@ -239,8 +239,21 @@ export function checkIn(
 }
 
 // ---------------------------------------------------------------- remember / review / forget
+/** "Actually, I hate morning gym." and "i hate morning gym" are the same memory. */
+const normalizeMemory = (s: string) => s.toLowerCase().replace(/^\s*(actually|also|and|so|well|ok(ay)?)[,\s]+/, "").replace(/[^a-z0-9$ ]+/g, " ").replace(/\s+/g, " ").trim();
+
 export function remember(db: DatabaseSync, today: string, content: string, kind: string, personId = "alex"): ToolResult {
   const now = nowAt(today);
+  // Saying it twice must not store it twice — dedupe against active memories of the same kind.
+  const existing = (
+    db.prepare("SELECT id, content FROM memory_items WHERE person_id=? AND kind=? AND status='active'").all(personId, kind) as Array<{ id: string; content: string }>
+  ).find((m) => normalizeMemory(m.content) === normalizeMemory(content));
+  if (existing) {
+    return {
+      text: kind === "preference" ? "Already noted — I'm planning around it." : `I already remember that ${kind}.`,
+      data: { memory_id: existing.id, kind, content: existing.content, duplicate: true },
+    };
+  }
   const id = newId("mem");
   db.prepare(
     `INSERT INTO memory_items (id, person_id, kind, content, confidence, source, question_id, status, created_at, updated_at)
@@ -255,20 +268,47 @@ export function remember(db: DatabaseSync, today: string, content: string, kind:
   };
 }
 
+// Spoken labels per memory kind, in the order they are read out. Only what the
+// user said is presented as known; engine inferences are labelled as such.
+const MEMORY_LABELS: Array<[kind: string, label: string]> = [
+  ["preference", "Preferences"],
+  ["fact", "Facts"],
+  ["commitment", "Commitments"],
+  ["goal_note", "About your goals"],
+  ["experience", "Recent check-ins"],
+  ["outcome", "Measured outcomes"],
+];
+const INFERRED_KINDS = new Set(["hypothesis", "pattern"]);
+const clean = (s: string) => s.replace(/^\s*(actually|also|and|so|well)[,\s]+/i, "").replace(/[.!]+\s*$/, "").trim();
+
 export function reviewMemory(db: DatabaseSync, filter?: string): ToolResult {
   const rows = (
-    db.prepare("SELECT id, kind, content, created_at FROM memory_items WHERE status='active' ORDER BY created_at DESC").all() as Array<{
-      id: string; kind: string; content: string; created_at: string;
+    db.prepare("SELECT id, kind, content, source, created_at FROM memory_items WHERE status='active' ORDER BY created_at DESC").all() as Array<{
+      id: string; kind: string; content: string; source: string; created_at: string;
     }>
   ).filter((m) => !filter || m.content.toLowerCase().includes(filter.toLowerCase()) || m.kind === filter);
-  const recent = rows.slice(0, 3).map((m) => m.content.replace(/\.+$/, ""));
-  return {
-    text:
-      rows.length === 0
-        ? "I don't hold any memories matching that."
-        : `I hold ${rows.length} ${filter ? "matching " : ""}memories about you. Most recent: ${recent.join("; ")}. Say "forget" plus any item to delete it.`,
-    data: { memories: rows },
-  };
+  if (rows.length === 0) return { text: "I don't hold any memories matching that.", data: { memories: rows } };
+
+  // 'seed' = onboarding statements by the user; only the engine's own writes count as inferred.
+  const isInferred = (m: { kind: string; source: string }) => m.source === "engine_inferred" || INFERRED_KINDS.has(m.kind);
+  const said = rows.filter((m) => !isInferred(m));
+  const inferred = rows.filter(isInferred);
+  const sections: string[] = [];
+  for (const [kind, label] of MEMORY_LABELS) {
+    const items = said.filter((m) => m.kind === kind);
+    if (items.length === 0) continue;
+    const shown = items.slice(0, 3).map((m) => clean(m.content));
+    sections.push(`${label}: ${shown.join("; ")}${items.length > 3 ? ` (and ${items.length - 3} more)` : ""}.`);
+  }
+  const text = [
+    `Here's what I know about you — ${said.length} ${said.length === 1 ? "thing" : "things"} you've told me${inferred.length ? ` and ${inferred.length} I've inferred but not confirmed` : ""}.`,
+    ...sections,
+    inferred.length ? `Inferred, unconfirmed: ${inferred.slice(0, 2).map((m) => clean(m.content)).join("; ")}.` : "",
+    'Say "forget" plus any item to delete it.',
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return { text, data: { memories: rows.map(({ source: _s, ...m }) => m) } };
 }
 
 export function forget(db: DatabaseSync, memoryId: string): ToolResult {

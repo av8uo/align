@@ -22,6 +22,8 @@ export interface OrchestratorReply {
 
 export interface SessionState {
   lastQuestionId: string | null;
+  /** Spoken text of the last question Align asked, so it can be repeated on request. */
+  lastQuestionText: string | null;
   lastInsightId: string | null;
   lastPlanId: string | null;
   planAwaitingApproval: boolean;
@@ -30,6 +32,7 @@ export interface SessionState {
 
 export const newSession = (): SessionState => ({
   lastQuestionId: null,
+  lastQuestionText: null,
   lastInsightId: null,
   lastPlanId: null,
   planAwaitingApproval: false,
@@ -42,8 +45,9 @@ export type CallTool = (name: string, args: Record<string, unknown>) => Promise<
 export function absorb(state: SessionState, call: ToolCallRecord): void {
   const d = call.data ?? {};
   if (call.name === "get_daily_briefing") {
-    const q = d.question as { id: string } | null;
+    const q = d.question as { id: string; text?: string } | null;
     state.lastQuestionId = q?.id ?? state.lastQuestionId;
+    state.lastQuestionText = q?.text ?? state.lastQuestionText;
     const insights = (d.insights as Array<{ id: string }> | undefined) ?? [];
     if (insights[0]) state.lastInsightId = insights[0].id;
   }
@@ -81,7 +85,7 @@ const ROUTES: Route[] = [
   },
   // Self-reported savings progress ("I put in 450") -> logged against the house fund.
   { match: /(?:put in|saved|deposited|transferred)\s*\$?(\d+)/i, run: (m) => ({ name: "check_in", args: { content: m.input ?? m[0]!, goal_id: "goal_house", amount: Number(m[1]) } }) },
-  { match: /briefing|good morning|catch me up|how('s| is) my (week|day)/i, run: () => ({ name: "get_daily_briefing", args: {} }) },
+  { match: /briefing|good morning|catch me up|how('s| is) my (week|day)|how am i doing|what('s| is) (up|new)/i, run: () => ({ name: "get_daily_briefing", args: {} }) },
   { match: /balance|how('s| is) my life|am i balanced|overall/i, run: () => ({ name: "get_life_balance", args: {} }) },
   { match: /did it work|how did (my|the) week go|what('s| has) changed|results/i, run: () => ({ name: "whats_changed", args: {} }) },
   { match: /goal|streak|progress/i, run: () => ({ name: "get_goal_progress", args: {} }) },
@@ -125,6 +129,24 @@ async function rulesBrain(text: string, state: SessionState, callTool: CallTool)
     absorb(state, call);
     return say(call.text);
   }
+  // "What do you want to know?" -> Align's one open question, never a memory.
+  if (/what (do|would) you (want|like) to know|ask me (something|anything)|(any|got) questions? for me/i.test(text)) {
+    const briefing = await callTool("get_daily_briefing", {});
+    calls.push(briefing);
+    absorb(state, briefing);
+    const q = (briefing.data?.question as { text?: string } | null)?.text;
+    if (q) return say(`One thing I'd like to know: ${q}`);
+    if (state.lastQuestionText) return say(`Earlier I asked: ${state.lastQuestionText} Whenever you're ready.`);
+    if (state.lastQuestionId) return say("I've already asked my one question for today — answer it whenever you like.");
+    return say("Nothing right now. I ask at most one question a day, and only when it would change what I do for you.");
+  }
+  // Questions aimed at Align ("can you listen?", "who are you?") are
+  // conversation, not life facts — and not the answer to an open question.
+  // Answer them without filing a memory.
+  const capabilities = 'I can brief you on your week, explain an insight, fix your schedule with your approval, or test a "what if". What would you like?';
+  if (/\b(can|could|do|are|will|would) you (listen|hear)/i.test(text)) return say("I'm listening — go ahead.");
+  if (/\b(who|what) are you\b/i.test(text)) return say(`I'm Align — I keep a model of your whole life and speak up when something matters. ${capabilities}`);
+  if (/^(hey|hi|hello|ok|okay|so)?[,\s]*(can|could|do|are|will|would|what|who|how|why|where|when) you\b/i.test(text)) return say(capabilities);
   // Not a command: if Align asked something, this is the answer -> memory.
   if (state.lastQuestionId) {
     const call = await callTool("check_in", { content: text, question_id: state.lastQuestionId });
@@ -132,6 +154,8 @@ async function rulesBrain(text: string, state: SessionState, callTool: CallTool)
     absorb(state, call);
     return say(`${call.text} That helps me connect the dots — say "fix it" when you want a plan.`);
   }
+  // Any other question with no open question of Align's to answer: conversation, not a memory.
+  if (/\?\s*$/.test(text)) return say(capabilities);
   const call = await callTool("check_in", { content: text });
   calls.push(call);
   absorb(state, call);
