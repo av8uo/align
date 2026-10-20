@@ -210,11 +210,28 @@ function addMsg(role, text, tools) {
   $("log").appendChild(div);
   $("log").scrollTop = 1e9;
 }
+// Pin Align to the best available ENGLISH voice (the browser default follows the
+// OS locale — on a French Windows that would read English with a French voice).
+let alignVoice = null;
+function pickVoice() {
+  const vs = window.speechSynthesis ? speechSynthesis.getVoices() : [];
+  const score = (v) =>
+    (/en[-_]US/i.test(v.lang) ? 2 : /^en/i.test(v.lang) ? 1 : -10) +
+    (/natural/i.test(v.name) ? 4 : 0) +            // Edge neural voices (best)
+    (/google us english/i.test(v.name) ? 3 : 0) +  // Chrome online voice
+    (/aria|jenny|guy|zira|mark/i.test(v.name) ? 1 : 0);
+  alignVoice = vs.slice().sort((a, b) => score(b) - score(a))[0] || null;
+  if (alignVoice && score(alignVoice) < 0) alignVoice = null;
+}
+if (window.speechSynthesis) { pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
+
 function speak(text, who) {
   $("caption").innerHTML = `<span class="who">${who}</span>${esc(text)}`;
   if (!$("tts").checked || !window.speechSynthesis) return;
   speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text);
+  u.lang = "en-US";
+  if (alignVoice) u.voice = alignVoice;
   u.rate = 1.04;
   $("ring").classList.add("on");
   u.onend = () => $("ring").classList.remove("on");
