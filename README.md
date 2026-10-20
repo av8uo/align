@@ -28,6 +28,42 @@ What that feels like as a user:
 | One week later, proactively | *"Date night happened — first in a month. Hypothesis confirmed. And your house fund — how did October go?"* |
 | When nothing's wrong | **Nothing.** Proactive ≠ interrupting. |
 
+## The whole of your life — not a slice of it
+
+Life areas are **configuration, not code** in Align's engine: the same detectors, correlator, and planner run over every domain. What that reasoning looks like, area by area:
+
+| Life area | Align reasons like this — on its own |
+|---|---|
+| **Marriage & partnership** | *"No time together in 24 days against a weekly goal — and the displacing force is work evenings, not chance."* |
+| **Children & family life** | *"Thursday's client workshop collides with Maya's school recital. One of them is movable. I moved the right one — after your yes."* |
+| **Extended family** | *"'Call Mom' has slipped 16 days. Saturday 17:00 is free."* |
+| **Friends & social life** | *"I have no fresh signal about your friends in three weeks — that's a knowledge gap worth one question."* → asks → protects a slot |
+| **Health & energy** | *"Gym 1 of 3 last week, zero slots scheduled next week — and since you said you hate mornings, these are evening slots."* |
+| **Personal growth** | *"Spanish untouched 12 days; two free mornings exist Tuesday and Friday."* |
+| **Work & career management** | *"Four late evenings, ~9 hours over plan, deep work fragmented below 60-minute blocks — work is the source domain of three other deficits."* |
+| **Business & long-term strategy** | *"Your quarterly strategy document has been rescheduled four times — a postponement chain. Protected a block before it slips a fifth."* |
+| **Long-term financial goals** | *"You committed $500/month to the house fund; October logged $450 — $50 short, on pace for the year."* (Pacing arithmetic on **your** stated goals and **your** numbers — never investment advice.) |
+| **Household operations** | Chore and maintenance cadences run on the same goal engine as everything else. |
+
+The demo persona exercises career ↔ marriage ↔ family ↔ health ↔ growth ↔ savings **end-to-end**; adding any other area is a goal definition, not new code.
+
+## It thinks while no one is talking to it
+
+The intelligence engine runs **on its own clock** — hourly in the background, plus after every new signal. Each cycle, unprompted: re-model the life-state → run all detectors over the past **and the next 7 days** → correlate across domains → measure outcomes of past interventions → update its learned probabilities → compute the single most valuable question to ask → draft the briefing. Then it speaks **only if something deserves attention** — a disciplined agent, not a notification machine.
+
+## It gets measurably more intelligent every week
+
+This is not a metaphor — it is the learning loop, in code ([src/engine/learn.ts](src/engine/learn.ts)):
+
+```
+choose the intervention maximizing:
+  P(you accept it | your response history, per intervention kind)
+× P(it actually improves the metric | measured outcomes of similar past interventions)
+subject to: hard constraints (locked events, preferences, quiet hours)
+```
+
+Both probabilities are live, Laplace-smoothed estimates from Align's **own recorded history**: every plan declares a hypothesis, every outcome is measured a week later against baseline, every verdict rewrites the planner's weights, every spoken correction ("I hate morning gym") durably reshapes future plans, and every confirmed insight lifts the hedging from its speech. **Week one it reasons well about a stranger; week eight it reasons about *you*.**
+
 ## Core subsystems
 
 1. **Life-State Model** — persistent world-model (SQLite): events, cadence goals, and an 8-type memory system (`fact | preference | goal_note | experience | pattern | hypothesis | commitment | outcome`), every item carrying confidence and provenance (`user_said` vs `engine_inferred`). Facts are never conflated with hypotheses.
