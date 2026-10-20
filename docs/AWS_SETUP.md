@@ -55,6 +55,8 @@ Facts that matter:
 
 Meanwhile the server stays fully functional: the Bedrock brain's **circuit breaker** opens on the first throttle until the next UTC day and every turn is answered by the deterministic rules brain through the same MCP tools. `GET /healthz` shows it: `"bedrock": {"open": true, "until": "...", "reason": "...", "trips": 1}`.
 
+**Demo workaround (no AWS):** `LIFEOS_LLM=anthropic` + `ANTHROPIC_API_KEY` in `.env` runs the identical host loop over the Claude API ([src/sim/anthropic.ts](../src/sim/anthropic.ts)). Switch back to `bedrock` once the quota is lifted — nothing else changes.
+
 ## 5. Verify the brain
 1. `curl http://localhost:3344/healthz` → `"brain":"bedrock"` and `"bedrock":{"open":false,...}` once the quota is lifted.
 2. Open http://localhost:3344/sim and say something OUTSIDE the rules patterns, e.g. *"I feel like my weekends disappear, what should I do?"* — a tool-grounded answer proves the LLM path.

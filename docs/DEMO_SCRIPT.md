@@ -5,13 +5,13 @@
 **Honesty rule for the video (say it, show it):** three kinds of things appear on screen and each is named as what it is —
 1. **Implemented and running:** the MCP server, the 13 tools, the engine, verified execution, the learning loop, the tests.
 2. **Simulated (labeled in the UI):** the Alexa+ host — voice pipeline, Echo Show/Dot frames, agent-initiated speech. The "SIMULATED ALEXA+ HOST" badge stays visible; never crop it.
-3. **Deferred:** Claude-on-Bedrock as the live voice (integration implemented and tested; currently throttled by a new-account daily quota) and the public cloud deployment (script ready; not provisioned — we chose not to spend on hosting). Say this in one sentence; don't hide it, don't dwell on it.
+3. **Deferred:** Claude-on-Bedrock as the live voice (integration implemented and tested; currently throttled by a new-account daily quota — the video is voiced by the same host loop over the Claude API) and the public cloud deployment (script ready; not provisioned — we chose not to spend on hosting). Say this in one sentence; don't hide it, don't dwell on it.
 
-**Format:** screen recording of `http://localhost:3344/sim` with **voice replies ON** — Align's TTS is the agent's voice. Alex's lines go in by clicking the demo chips or typing (captions carry them). Strongest material first: judges may stop at 3:00. **Every beat ends with something done.**
+**Format:** screen recording of `http://localhost:3344/sim` with **voice replies ON** — Align's TTS is the agent's voice. Alex's lines go in by clicking the demo chips or typing (captions carry them). Strongest material first: judges may stop at 3:00. **Every beat ends with something done.** On screen it is always *Align* talking — the LLM behind it is never named or shown.
 
 ## Recording checklist
 1. `npm start` → open `http://localhost:3344/sim` in a clean **Edge** window (best neural voices), bookmarks bar hidden, 100% zoom, 1920×1080.
-2. `/healthz` in another tab must say `"status":"ok"` (brain can be `rules` or `bedrock` with the circuit open — the demo is identical).
+2. `/healthz` in another tab must say `"status":"ok"` and `"brain":"anthropic"` with `"configured":true` (`.env`: `LIFEOS_LLM=anthropic` + `ANTHROPIC_API_KEY`). If it says `rules`, the demo still runs — only free-form sentences get simpler answers.
 3. Click **↺ Reset**, then **reload the page** — pristine day one. Toggle ✅ voice replies ON. System volume up.
 4. Record with Win+G (Game Bar) capturing desktop audio, 1080p. One silent rehearsal, then Reset + reload and record for real.
 5. Mouse calm; move only to click. No music. No logos other than the product's own UI.
@@ -60,12 +60,12 @@
 
 ## Beat 5 — Under the hood, honestly — 2:30–2:50
 **Visual, fast cuts (pre-record separately, 4–5 s each):**
-1. Terminal: `npm test` → **80 tests, 8 suites, all green** (engine, MCP wire, proactive quiet rule, Bedrock circuit breaker).
+1. Terminal: `npm test` → **85 tests, 9 suites, all green** (engine, MCP wire, proactive quiet rule, Bedrock circuit breaker).
 2. Terminal: `curl -X POST localhost:3344/mcp … tools/list` → the 13 tools in JSON — *the real Streamable HTTP endpoint*. (If you also show the server inside another MCP client, show only its tool list in a terminal/inspector — no third-party logos.)
 3. README: the functional-requirements coverage table and the **real / simulated / deferred** honesty table.
 4. `src/engine/` file tree + the objective-function block.
 **VO:**
-> *"A real MCP server — a deterministic engine decides, a language model only speaks. Claude on Amazon Bedrock is wired in as the orchestrator and tested with injected failures; today it's throttled by a new-account quota, so what you heard was the deterministic fallback through the same tools — by design, the demo never depends on the cloud. Eighty automated tests. Tools answer in under five milliseconds."*
+> *"A real MCP server — a deterministic engine decides, a language model only speaks, through these thirteen tools. The same host loop runs on Amazon Bedrock for the AWS path; it's quota-throttled on our new account today, so a deterministic fallback stands behind every turn — by design, the demo never depends on the cloud. Eighty-five automated tests. Tools answer in under five milliseconds."*
 **Caption:** `Implemented: MCP server, engine, learning loop · Simulated: Alexa+ host · Deferred: Bedrock voice (quota), hosted deploy (cost)`
 
 ## Close — 2:50–3:00

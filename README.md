@@ -135,7 +135,7 @@ Requirements: **Node.js ≥ 24** (uses the built-in `node:sqlite`), any OS. No A
 
 ```bash
 npm install
-npm test        # 80 tests across 8 suites — engine, MCP wire, proactive quiet rule, Bedrock circuit breaker
+npm test        # 85 tests across 9 suites — engine, MCP wire, proactive quiet rule, Bedrock circuit breaker
 npm start       # http://localhost:3344/sim  (simulator) · /mcp (MCP endpoint) · /healthz · /stats
 ```
 
@@ -152,16 +152,24 @@ curl -X POST http://localhost:3344/mcp -H "Content-Type: application/json" -H "A
 
 Or point any MCP client (MCP Inspector, Claude Desktop, etc.) at `http://localhost:3344/mcp`.
 
-Bedrock brain (optional): set AWS credentials + `LIFEOS_LLM=bedrock` (see [docs/AWS_SETUP.md](docs/AWS_SETUP.md)); without it — or whenever Bedrock throttles — the deterministic rules brain serves the identical demo through the same tools. `/stats` reports live per-tool latency.
+**The host brain** — which LLM plays the Alexa+ role in the simulator (`LIFEOS_LLM` in `.env`):
+
+| `LIFEOS_LLM` | Who understands you | Needs |
+|---|---|---|
+| `anthropic` | Claude via the Claude API ([src/sim/anthropic.ts](src/sim/anthropic.ts)) — the configuration used in the demo video | `ANTHROPIC_API_KEY` (cents per conversation) |
+| `bedrock` | Claude on Amazon Bedrock ([src/sim/bedrock.ts](src/sim/bedrock.ts)) — the AWS Builder path | AWS credentials + Bedrock model access (see [docs/AWS_SETUP.md](docs/AWS_SETUP.md)) |
+| unset | the deterministic rules brain — a regex router over the same tools | nothing |
+
+Whatever the setting, any LLM failure (bad key, quota, refusal) falls back to the rules brain for that turn, through the same MCP tools, so the demo never dies. `/healthz` reports which brain is live; `/stats` reports per-tool latency. The engine's decisions are identical under all three — the LLM only converses.
 
 ### Test results (Oct 20, 2026)
 
 ```
-Test Files  8 passed (8)
-     Tests  80 passed (80)
+Test Files  9 passed (9)
+     Tests  85 passed (85)
 ```
 
-Suites: `engine` (detectors, correlator, solver, learning), `schema`, `seed`, `mcp` (wire-level: full two-week demo arc over Streamable HTTP, latency budget asserted), `proactive` (quiet rule), `orchestrator` (Bedrock failure → rules fallback), `bedrock` (circuit breaker with injected transport). Run `npm test` to reproduce.
+Suites: `engine` (detectors, correlator, solver, learning), `schema`, `seed`, `mcp` (wire-level: full two-week demo arc over Streamable HTTP, latency budget asserted), `proactive` (quiet rule), `orchestrator` (LLM failure → rules fallback, conversation routing), `bedrock` (circuit breaker with injected transport), `anthropic` (Claude-API host loop with injected transport). Run `npm test` to reproduce.
 
 ## Alexa+ functional requirements coverage
 
@@ -186,15 +194,15 @@ Mapping of [Alexa+ functional requirements](https://developer.amazon.com/docs/al
 | Real & working | Simulated (clearly labeled) | Deferred |
 |---|---|---|
 | MCP server (spec 2025-11-25), portable to any MCP host | The Alexa+ host: voice pipeline + **agent-initiated proactive speech** (no public API for add-on-initiated turns — filed as our #1 feature request) | Real calendar OAuth (`.ics`-style import + seeded data instead) |
-| Engine, memory, verified execution, learning loop — 80 automated tests | Echo Show / Echo Dot device frames | Multi-person households (schema ready) |
-| Bedrock brain integration: Converse tool-use loop, circuit breaker, fallback — all tested with injected failures | — | **Bedrock as the live voice:** at submission time every call is throttled by a new-account daily token quota (AWS Support case filed); the demo video therefore shows the deterministic rules brain — through the same MCP tools |
+| Engine, memory, verified execution, learning loop — 85 automated tests | Echo Show / Echo Dot device frames | Multi-person households (schema ready) |
+| LLM host brain: Claude via the Claude API voices the demo video; the Bedrock integration (Converse tool-use loop, circuit breaker, fallback) is implemented and tested with injected failures | — | **Bedrock as the live voice:** at submission time every Bedrock call is throttled by a new-account daily token quota (AWS Support case filed), so the demo uses the Claude API path — same tools, same engine, different plumbing |
 | Hourly background engine runs | — | **Hosted deployment:** the ECS Express Mode deploy script is complete and preflight-tested, but **not provisioned** — a deliberate no-cost decision; the project runs locally in two commands |
 | — | — | Finance *advice* (policy); only user-stated goals with self-reported progress · Real Alexa+ deployment (private preview gated) |
 
 ### Known limitations
 - Calendar and life data are seeded demo data (an `.ics`-style import), not a live calendar OAuth.
 - The proactive channel, voice pipeline and device frames are a simulation of Alexa+ — there is no public API today for an add-on to initiate a turn.
-- The Bedrock brain has not yet produced a live spoken turn in this account because of the day-one quota; its behavior is covered by unit tests with an injected transport, not by a recorded live run.
+- The Bedrock brain has not yet produced a live spoken turn in this account because of the day-one quota; its behavior is covered by unit tests with an injected transport. The demo video is voiced by the Claude-API host instead — identical role, identical tools.
 - Single user, single household; English only.
 
 ## AWS (Builder mini challenge)

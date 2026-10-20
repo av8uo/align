@@ -17,7 +17,7 @@ export interface ToolCallRecord {
 export interface OrchestratorReply {
   reply: string;
   toolCalls: ToolCallRecord[];
-  brain: "bedrock" | "rules";
+  brain: "bedrock" | "anthropic" | "rules";
 }
 
 export interface SessionState {

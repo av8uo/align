@@ -19,6 +19,7 @@ import { seed, DEMO_TODAY } from "./db/seed.js";
 import * as impl from "./tools/impl.js";
 import { briefingKey, orchestrate, newSession, type SessionState, type ToolCallRecord } from "./sim/orchestrator.js";
 import { makeBedrockBrain } from "./sim/bedrock.js";
+import { makeAnthropicBrain } from "./sim/anthropic.js";
 import { runEngine } from "./engine/engine.js";
 import { addDays } from "./engine/time.js";
 
@@ -371,7 +372,12 @@ export function createLifeOsHttpServer(db: DatabaseSync, today: string) {
     const { tools } = await c.listTools();
     return tools.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema as Record<string, unknown> }));
   };
-  const bedrockBrain = process.env.LIFEOS_LLM === "bedrock" ? makeBedrockBrain(listTools) : undefined;
+  // The host brain: which LLM plays Alexa+. "bedrock" = Claude on Amazon
+  // Bedrock (AWS Builder path), "anthropic" = Claude via the Claude API,
+  // anything else = the deterministic rules brain only.
+  const llm = process.env.LIFEOS_LLM;
+  const bedrockBrain = llm === "bedrock" ? makeBedrockBrain(listTools) : llm === "anthropic" ? makeAnthropicBrain(listTools) : undefined;
+  const brainName = llm === "bedrock" ? "bedrock" : llm === "anthropic" ? "anthropic" : "rules";
 
   const srv = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     for (const [k, v] of Object.entries(CORS)) res.setHeader(k, v);
@@ -382,7 +388,7 @@ export function createLifeOsHttpServer(db: DatabaseSync, today: string) {
     if (path === "/healthz") {
       // When the Bedrock circuit is open, replies come from the rules brain
       // even though the Bedrock brain is configured — surfaced here honestly.
-      return json(res, 200, { status: "ok", today: currentToday, brain: bedrockBrain ? "bedrock" : "rules", bedrock: bedrockBrain?.status() ?? null });
+      return json(res, 200, { status: "ok", today: currentToday, brain: brainName, llm: bedrockBrain?.status() ?? null });
     }
     if (path === "/stats") return json(res, 200, latencyReport());
 
