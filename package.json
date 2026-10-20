@@ -1,9 +1,9 @@
 {
-  "name": "lifeos",
+  "name": "align",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "LifeOS — a proactive, cross-domain life optimization agent for Alexa+ (MCP server)",
+  "description": "Align — a proactive, cross-domain life optimization agent for Alexa+ (MCP server)",
   "engines": {
     "node": ">=24"
   },

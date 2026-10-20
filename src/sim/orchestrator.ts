@@ -120,7 +120,7 @@ async function rulesBrain(text: string, state: SessionState, callTool: CallTool)
     absorb(state, call);
     return say(call.text);
   }
-  // Not a command: if LifeOS asked something, this is the answer -> memory.
+  // Not a command: if Align asked something, this is the answer -> memory.
   if (state.lastQuestionId) {
     const call = await callTool("check_in", { content: text, question_id: state.lastQuestionId });
     calls.push(call);

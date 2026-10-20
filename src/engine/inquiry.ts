@@ -1,6 +1,6 @@
 /**
  * Proactive inquiry: pick the ONE question whose answer would most improve
- * LifeOS's understanding (expected value of information). Deterministic scoring;
+ * Align's understanding (expected value of information). Deterministic scoring;
  * an LLM may rephrase the text later, never choose the question.
  */
 import type { DatabaseSync } from "node:sqlite";

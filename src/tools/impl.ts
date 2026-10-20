@@ -22,7 +22,7 @@ const nowAt = (today: string) => `${today}T08:00:00`;
 
 /**
  * Respect uncertainty out loud (vision: distinguish facts, patterns, and
- * hypotheses). Below the confidence bar, LifeOS says so — and user answers
+ * hypotheses). Below the confidence bar, Align says so — and user answers
  * that confirm a pattern remove the hedge on the next turn.
  */
 const hedge = (confidence: number, s: string): string =>

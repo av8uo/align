@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>LifeOS Simulator</title>
+<title>Align Simulator</title>
 <style>
   :root {
     --bg: #0b0e13; --panel: #14181e; --panel2: #1b2028; --text: #e8ebf0; --dim: #8b93a1;
@@ -74,14 +74,14 @@
 </head>
 <body>
 <header>
-  <h1>LifeOS</h1>
+  <h1>Align</h1>
   <span class="badge sim">SIMULATED ALEXA+ HOST</span>
   <span class="sub">The MCP server behind this page is real — this host stands in for Alexa+ (deployment is private preview). Proactive turns use the host channel we're requesting from Amazon.</span>
 </header>
 <div class="wrap">
   <div class="device">
     <div class="screen" id="screen">
-      <div class="statusbar"><span id="clock">Monday 7:02 AM</span><span>LifeOS</span></div>
+      <div class="statusbar"><span id="clock">Monday 7:02 AM</span><span>Align</span></div>
       <div class="content" id="content">
         <div class="card dimtxt">Waking up…</div>
       </div>
@@ -114,7 +114,7 @@
       <button>What do you know about me?</button>
     </div>
     <div class="inputrow">
-      <input type="text" id="input" placeholder="Talk to LifeOS… (or use the mic)" />
+      <input type="text" id="input" placeholder="Talk to Align… (or use the mic)" />
       <button id="send">Send</button>
     </div>
   </div>
@@ -229,22 +229,22 @@ async function send(text) {
     const out = await r.json();
     addMsg("alexa", out.reply, out.toolCalls);
     render(out.toolCalls);
-    speak(out.reply, "LifeOS");
+    speak(out.reply, "Align");
   } catch (e) { addMsg("alexa", "Connection problem: " + e.message); }
   $("listen").classList.remove("on");
 }
 function speakCaption(text) { $("caption").innerHTML = `<span class="who" style="color:var(--dim)">You</span>${esc(text)}`; }
 
-// ---------- proactive opening: LifeOS speaks FIRST (simulated host channel)
+// ---------- proactive opening: Align speaks FIRST (simulated host channel)
 async function proactive() {
   try {
     const r = await fetch("/proactive?session_id=" + session).then((x) => x.json());
     const h = await fetch("/healthz").then((x) => x.json());
     $("brain").textContent = "brain: " + (h.brain || "rules") + " · demo day: " + (h.today || "");
-    if (r.quiet) { $("content").innerHTML = '<div class="card dimtxt">Nothing needs your attention right now — LifeOS stays quiet.</div>'; return; }
+    if (r.quiet) { $("content").innerHTML = '<div class="card dimtxt">Nothing needs your attention right now — Align stays quiet.</div>'; return; }
     addMsg("alexa", "🔔 PROACTIVE (simulated host channel): " + r.text);
     render([], r.data);
-    speak(r.text, "LifeOS");
+    speak(r.text, "Align");
   } catch (e) { $("content").innerHTML = '<div class="card dimtxt">Server unreachable: ' + esc(e.message) + "</div>"; }
 }
 proactive();

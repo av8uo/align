@@ -1,8 +1,8 @@
-# LifeOS
+# Align
 
 **A proactive, cross-domain life-optimization agent for Alexa+**, built on the Model Context Protocol (spec 2025-11-25, Streamable HTTP).
 
-LifeOS watches where your life drifts from your stated values — across career, marriage & family, health, personal growth, and your financial goals — asks the one question that matters, proposes concrete fixes, executes them only with your approval, verifies every change, and measures whether it actually helped.
+Align watches where your life drifts from your stated values — across career, marriage & family, health, personal growth, and your financial goals — asks the one question that matters, proposes concrete fixes, executes them only with your approval, verifies every change, and measures whether it actually helped.
 
 > Status: hackathon build in progress (Amazon Developer Hackathon 2026, Alexa+ track + AWS Builder mini challenge). Full README with architecture, certification-requirement mapping, and measured latency lands before submission.
 

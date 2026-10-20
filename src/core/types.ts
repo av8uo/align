@@ -1,4 +1,4 @@
-/** Shared domain types for LifeOS. */
+/** Shared domain types for Align. */
 
 export type Domain =
   | "work"

@@ -1,5 +1,5 @@
 /**
- * The learning loop — what makes LifeOS smarter about this person every week.
+ * The learning loop — what makes Align smarter about this person every week.
  *
  * Two priors, both computed from REAL history (Laplace-smoothed):
  *  - acceptancePrior(kind): how often this person approves this kind of change

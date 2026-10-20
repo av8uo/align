@@ -1,6 +1,6 @@
 /**
- * LifeOS MCP server — Streamable HTTP (stateless mode), official SDK.
- * Alexa+ (or any MCP host: Claude, the LifeOS simulator, MCP Inspector)
+ * Align MCP server — Streamable HTTP (stateless mode), official SDK.
+ * Alexa+ (or any MCP host: Claude, the Align simulator, MCP Inspector)
  * is the client; every tool answers from precomputed state in milliseconds.
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -52,7 +52,7 @@ const zChange = z
 
 // ---------------------------------------------------------------- MCP server
 export function buildMcpServer(db: DatabaseSync, today: string): McpServer {
-  const server = new McpServer({ name: "lifeos", version: "0.1.0" });
+  const server = new McpServer({ name: "align", version: "0.1.0" });
 
   const wrap =
     <A,>(tool: string, fn: (args: A) => impl.ToolResult) =>
@@ -129,7 +129,7 @@ export function buildMcpServer(db: DatabaseSync, today: string): McpServer {
     {
       title: "Check in",
       description:
-        "Record how something in the user's life is going — an answer to LifeOS's question, a status update ('we barely talk lately', 'date night happened'), or self-reported goal progress ('I put 450 in savings', with goal_id + amount). Updates memory and re-analyzes.",
+        "Record how something in the user's life is going — an answer to Align's question, a status update ('we barely talk lately', 'date night happened'), or self-reported goal progress ('I put 450 in savings', with goal_id + amount). Updates memory and re-analyzes.",
       inputSchema: {
         content: z.string().describe("What the user said, verbatim or near-verbatim"),
         question_id: z.string().optional().describe("If this answers the briefing's question, its id"),
@@ -257,7 +257,7 @@ export function buildMcpServer(db: DatabaseSync, today: string): McpServer {
     {
       title: "Review memory",
       description:
-        "List what LifeOS remembers about the user (facts, preferences, experiences, commitments) so they can review or correct it. Use for 'what do you know about me', 'show your memory'.",
+        "List what Align remembers about the user (facts, preferences, experiences, commitments) so they can review or correct it. Use for 'what do you know about me', 'show your memory'.",
       inputSchema: { filter: z.string().optional().describe("Substring or kind to filter by") },
       outputSchema: { memories: z.array(z.object({ id: z.string(), kind: z.string(), content: z.string(), created_at: z.string() })) },
     },
@@ -344,7 +344,7 @@ export function createLifeOsHttpServer(db: DatabaseSync, today: string) {
   engineTimer.unref();
 
   // ---- simulated Alexa+ host state: conversation sessions + a self MCP client.
-  // The host talks to LifeOS ONLY over the real MCP wire — same as Alexa+ would.
+  // The host talks to Align ONLY over the real MCP wire — same as Alexa+ would.
   const sessions = new Map<string, SessionState>();
   let mcp: Client | null = null;
 
@@ -394,7 +394,7 @@ export function createLifeOsHttpServer(db: DatabaseSync, today: string) {
       return json(res, 200, { today: currentToday, reset: true });
     }
 
-    // The proactive channel: the HOST polls this; LifeOS speaks first only when
+    // The proactive channel: the HOST polls this; Align speaks first only when
     // the engine found something new, and stays quiet otherwise. On real Alexa+
     // this is the add-on-initiated-turns API we request as platform feedback.
     if (path === "/proactive") {
@@ -458,7 +458,20 @@ export function createLifeOsHttpServer(db: DatabaseSync, today: string) {
 }
 
 // ---------------------------------------------------------------- main
+/** Minimal .env loader (no dependency): KEY=VALUE lines, CRLF-tolerant, never overrides real env. */
+export function loadDotEnv(path = ".env"): void {
+  try {
+    for (const line of readFileSync(path, "utf8").split("\n")) {
+      const m = line.replace(/\r$/, "").match(/^([A-Z0-9_]+)=(.*)$/);
+      if (m && !(m[1]! in process.env)) process.env[m[1]!] = m[2]!.trim();
+    }
+  } catch {
+    /* no .env file — fine */
+  }
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  loadDotEnv();
   const db = openDb();
   migrate(db);
   const empty = (db.prepare("SELECT COUNT(*) AS n FROM people").get() as { n: number }).n === 0;
@@ -467,7 +480,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
 
   const port = Number(process.env.PORT ?? 3344);
   createLifeOsHttpServer(db, DEMO_TODAY).listen(port, () => {
-    console.log(`LifeOS MCP server: http://localhost:${port}/mcp  (health: /healthz, latency: /stats)`);
+    console.log(`Align MCP server: http://localhost:${port}/mcp  (health: /healthz, latency: /stats)`);
     console.log(`Demo anchor date: ${DEMO_TODAY}${empty ? " — database seeded" : ""}`);
   });
 }

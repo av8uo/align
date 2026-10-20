@@ -1,6 +1,6 @@
 /**
  * Verified execution: apply an approved plan to the calendar store, then
- * RE-READ state and verify every change. LifeOS never claims success it
+ * RE-READ state and verify every change. Align never claims success it
  * didn't check (certification: no unverified claims; approval gates action).
  */
 import type { DatabaseSync } from "node:sqlite";

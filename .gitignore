@@ -4,4 +4,4 @@ data/
 *.db
 .env
 server.log
-docs/aws-deploy-least-privilege-policy.json
+docs/aws-private/

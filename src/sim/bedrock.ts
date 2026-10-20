@@ -19,7 +19,7 @@ import { absorb } from "./orchestrator.js";
 const MODEL_ID = process.env.BEDROCK_MODEL_ID ?? "us.anthropic.claude-sonnet-4-5-20250929-v1:0";
 const MAX_TOOL_ROUNDS = 6;
 
-const SYSTEM = `You are Alexa+, hosting the LifeOS add-on — a proactive, cross-domain life-optimization agent.
+const SYSTEM = `You are Alexa+, hosting the Align add-on — a proactive, cross-domain life-optimization agent.
 Rules:
 - Answer by CALLING TOOLS; never invent life data. All state lives behind the tools.
 - Speak like a helpful voice assistant: short, warm, concrete. At most ~3 sentences unless reading a plan.
