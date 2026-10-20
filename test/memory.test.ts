@@ -52,3 +52,15 @@ describe("review_memory", () => {
     expect(out.text).toMatch(/Inferred, unconfirmed: Work evenings are displacing family time\./);
   });
 });
+
+describe("goal notes", () => {
+  it("stores a wish as a goal_note and lists it under 'About your goals'", () => {
+    const db = new DatabaseSync(":memory:");
+    migrate(db);
+    seed(db);
+    const r = remember(db, DEMO_TODAY, "I want a better relationship with my wife", "goal_note");
+    expect(r.text).toMatch(/^Kept as something you want/);
+    expect(reviewMemory(db).text).toMatch(/About your goals: I want a better relationship with my wife\./);
+    expect(remember(db, DEMO_TODAY, "i want a better relationship with my wife!", "goal_note").data).toMatchObject({ duplicate: true });
+  });
+});

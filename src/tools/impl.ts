@@ -250,7 +250,7 @@ export function remember(db: DatabaseSync, today: string, content: string, kind:
   ).find((m) => normalizeMemory(m.content) === normalizeMemory(content));
   if (existing) {
     return {
-      text: kind === "preference" ? "Already noted — I'm planning around it." : `I already remember that ${kind}.`,
+      text: kind === "preference" ? "Already noted — I'm planning around it." : kind === "goal_note" ? "Already kept — it's on my list." : `I already remember that ${kind}.`,
       data: { memory_id: existing.id, kind, content: existing.content, duplicate: true },
     };
   }
@@ -263,7 +263,9 @@ export function remember(db: DatabaseSync, today: string, content: string, kind:
     text:
       kind === "preference"
         ? "Preference saved — I'll plan around it from now on."
-        : `Remembered as a ${kind}.`,
+        : kind === "goal_note"
+          ? "Kept as something you want — it will weigh on every plan I propose."
+          : `Remembered as a ${kind}.`,
     data: { memory_id: id, kind, content },
   };
 }

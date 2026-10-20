@@ -153,11 +153,11 @@ export function buildMcpServer(db: DatabaseSync, today: string): McpServer {
         "Store a durable fact, preference, or commitment the user explicitly wants kept ('remember that Sam is vegetarian', 'I prefer mornings for focus work').",
       inputSchema: {
         content: z.string(),
-        kind: z.enum(["fact", "preference", "commitment"]).default("fact"),
+        kind: z.enum(["fact", "preference", "commitment", "goal_note"]).default("fact"),
       },
       outputSchema: { memory_id: z.string(), kind: z.string(), content: z.string(), duplicate: z.boolean().optional() },
     },
-    wrap("remember", (a: { content: string; kind?: "fact" | "preference" | "commitment" }) =>
+    wrap("remember", (a: { content: string; kind?: "fact" | "preference" | "commitment" | "goal_note" }) =>
       impl.remember(db, today, a.content, a.kind ?? "fact"),
     ),
   );

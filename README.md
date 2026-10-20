@@ -135,7 +135,7 @@ Requirements: **Node.js ≥ 24** (uses the built-in `node:sqlite`), any OS. No A
 
 ```bash
 npm install
-npm test        # 79 tests across 8 suites — engine, MCP wire, proactive quiet rule, Bedrock circuit breaker
+npm test        # 80 tests across 8 suites — engine, MCP wire, proactive quiet rule, Bedrock circuit breaker
 npm start       # http://localhost:3344/sim  (simulator) · /mcp (MCP endpoint) · /healthz · /stats
 ```
 
@@ -158,7 +158,7 @@ Bedrock brain (optional): set AWS credentials + `LIFEOS_LLM=bedrock` (see [docs/
 
 ```
 Test Files  8 passed (8)
-     Tests  79 passed (79)
+     Tests  80 passed (80)
 ```
 
 Suites: `engine` (detectors, correlator, solver, learning), `schema`, `seed`, `mcp` (wire-level: full two-week demo arc over Streamable HTTP, latency budget asserted), `proactive` (quiet rule), `orchestrator` (Bedrock failure → rules fallback), `bedrock` (circuit breaker with injected transport). Run `npm test` to reproduce.
@@ -186,7 +186,7 @@ Mapping of [Alexa+ functional requirements](https://developer.amazon.com/docs/al
 | Real & working | Simulated (clearly labeled) | Deferred |
 |---|---|---|
 | MCP server (spec 2025-11-25), portable to any MCP host | The Alexa+ host: voice pipeline + **agent-initiated proactive speech** (no public API for add-on-initiated turns — filed as our #1 feature request) | Real calendar OAuth (`.ics`-style import + seeded data instead) |
-| Engine, memory, verified execution, learning loop — 79 automated tests | Echo Show / Echo Dot device frames | Multi-person households (schema ready) |
+| Engine, memory, verified execution, learning loop — 80 automated tests | Echo Show / Echo Dot device frames | Multi-person households (schema ready) |
 | Bedrock brain integration: Converse tool-use loop, circuit breaker, fallback — all tested with injected failures | — | **Bedrock as the live voice:** at submission time every call is throttled by a new-account daily token quota (AWS Support case filed); the demo video therefore shows the deterministic rules brain — through the same MCP tools |
 | Hourly background engine runs | — | **Hosted deployment:** the ECS Express Mode deploy script is complete and preflight-tested, but **not provisioned** — a deliberate no-cost decision; the project runs locally in two commands |
 | — | — | Finance *advice* (policy); only user-stated goals with self-reported progress · Real Alexa+ deployment (private preview gated) |

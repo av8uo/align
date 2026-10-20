@@ -231,6 +231,7 @@ async function rulesBrain(text: string, state: SessionState, callTool: CallTool)
     const call = await callTool("remember", { content: text, kind: "goal_note" });
     calls.push(call);
     absorb(state, call);
+    if (call.isError) return say(`I couldn't keep that: ${call.text}`);
     return say("That's a goal worth planning around — I've kept it. Say \"fix it\" and I'll look for protected time for it this week; nothing changes without your yes.");
   }
   // While Align's question is open, a sentence-length statement is the answer —
