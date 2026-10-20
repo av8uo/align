@@ -32,6 +32,12 @@ Everything below happened for real while building Align during the hackathon win
 - **Needs work:** App Runner is **closed to new accounts**, but its error — `SubscriptionRequiredException: The AWS Access Key Id needs a subscription for the service` — reads like a **paywall**, not "this service is not available to you; use ECS Express Mode" (friction log F4). The caller-side IAM action set for Express Mode is only documented in a GitHub Action README, not in the ECS guide (F8).
 - **Again?** Yes — ECS Express Mode specifically.
 
+### Claude API (`@anthropic-ai/sdk`, Claude Haiku 5.5 as the demo host)
+- **Used for:** the same host loop as Bedrock, reached directly ([src/sim/anthropic.ts](../src/sim/anthropic.ts)) when the Bedrock quota blocked us; a per-turn context block is injected after a cached static prompt.
+- **Worked well:** tool use + structured context made the host stop re-saving and re-asking; a 2–4 s voice turn on Haiku; prompt caching on the static system block.
+- **Needs work:** thinking blocks are bound to the exact system prompt — changing it between the tool rounds of one turn fails the whole turn with a 400 (friction log F10). The error is clear but the constraint is easy to miss in a tool loop.
+- **Again?** Yes.
+
 ### Node.js `node:sqlite`
 - **Used for:** the entire life-state model — 12 tables, synchronous reads keeping tool latency in single-digit milliseconds.
 - **Worked well:** zero native-module pain on Windows (a real historical problem), in-memory databases made 40 tests fast.
@@ -108,6 +114,24 @@ Everything below happened for real while building Align during the hackathon win
 - **Severity:** Medium (High for anyone refusing AdministratorAccess).
 - **Workaround:** the 9-statement policy in our repo (`docs/aws-private/deploy-user-policy.json`, private) — written once, verified by the script's `--check` preflight.
 - **Suggestion:** publish the minimal caller policy for `create-express-gateway-service` in the Express Mode guide, including the two PassRole service principals.
+
+### F9 — Output-schema strictness surfaces as a generic error (MCP TypeScript SDK)
+- **Task:** add optional fields to a tool's `structuredContent` (`check_in.clarification_needed`, `apply_plan.status`, `set_goal.updated`) while keeping the 13-tool contract.
+- **Steps:** returned the extra field → every call failed with `MCP error -32602: Structured content does not match the tool's output schema: data must NOT have additional properties` — twice in one message, naming no property.
+- **Expected:** the error to name the offending property, or output schemas to be additive by default (`additionalProperties: true`) since structured content is for hosts that opt in.
+- **Actual:** generic message; we found the field by diffing schemas; the failure appeared only at runtime through our own host, not in `registerTool`.
+- **Severity:** Medium — it broke both LLM hosts mid-demo rehearsal.
+- **Workaround:** declare every optional output field up front; our independent interop client now exercises every tool after each change.
+- **Suggestion:** include the property path in the validation error; document that zod output objects are converted with `additionalProperties: false`.
+
+### F10 — Thinking blocks are bound to a byte-identical system prompt (Claude API)
+- **Task:** give the host model a per-turn context block (facts, preferences, open question) alongside the static system prompt.
+- **Steps:** rebuilt the context on every tool round of a turn (state changes after each tool) → `400 invalid_request_error: Invalid signature in thinking block. The block is bound to a different conversation… The system prompt differs from the one this block was created with.`
+- **Expected:** a note in the tool-use guide that the `system` prompt must stay identical across the rounds of a single turn when thinking blocks are replayed.
+- **Actual:** discovered through the error; fixed by building the context once per turn.
+- **Severity:** Medium — a whole turn fails, with a fallback to our rules brain masking it.
+- **Workaround:** context computed once per turn; static prompt first (cacheable), dynamic block second.
+- **Suggestion:** mention the invariant where tool loops are documented; the suggested `drop_block` remedy requires a beta header, which is heavier than the one-line fix.
 
 ## Part 3 — Feature requests
 

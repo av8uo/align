@@ -70,15 +70,27 @@ export function resultsSentence(outcomes: Array<{ metric: string; baseline: numb
   return parts.join(" ");
 }
 
+/** What an insight rests on, as counts: shown on the card so the basis is visible at a glance. */
+export function evidenceSummary(e: Record<string, unknown>): { events: number; goals: number; stated: number; inferred: number; alternatives: number } {
+  const records = (e.records as Array<{ type: string; id: string }> | undefined) ?? [];
+  return {
+    events: new Set(records.filter((r) => r.type === "event").map((r) => r.id)).size,
+    goals: new Set(records.filter((r) => r.type === "goal").map((r) => r.id)).size,
+    stated: ((e.stated as string[] | undefined) ?? []).length,
+    inferred: ((e.inferred as string[] | undefined) ?? []).length,
+    alternatives: ((e.alternatives as string[] | undefined) ?? []).length,
+  };
+}
+
 // ---------------------------------------------------------------- briefing
 export function getDailyBriefing(db: DatabaseSync, today: string): ToolResult {
   ensureEngineRun(db, today);
   const balance = lifeBalance(loadCtx(db, today));
   const insights = db
     .prepare(
-      "SELECT id, title, severity, domains, confidence FROM insights WHERE status IN ('new','surfaced') ORDER BY severity DESC, confidence DESC LIMIT 3",
+      "SELECT id, title, severity, domains, confidence, evidence FROM insights WHERE status IN ('new','surfaced') ORDER BY severity DESC, confidence DESC LIMIT 3",
     )
-    .all() as Array<{ id: string; title: string; severity: number; domains: string; confidence: number }>;
+    .all() as Array<{ id: string; title: string; severity: number; domains: string; confidence: number; evidence: string }>;
   // Everything new was available to be heard in this briefing (headline + "also"):
   // the quiet rule counts only insights that appeared since the last briefing.
   db.prepare("UPDATE insights SET status='surfaced' WHERE status='new'").run();
@@ -157,6 +169,8 @@ export function getDailyBriefing(db: DatabaseSync, today: string): ToolResult {
         title: i.title,
         severity: i.severity,
         domains: JSON.parse(i.domains) as string[],
+        confidence: i.confidence,
+        evidence_summary: evidenceSummary(JSON.parse(i.evidence) as Record<string, unknown>),
       })),
       question: q ?? null,
       outcomes,
@@ -224,6 +238,7 @@ export function getInsight(db: DatabaseSync, insightId: string): ToolResult {
       reasoning: row.reasoning,
       confidence: row.confidence,
       record_count: evidence.records?.length ?? 0,
+      evidence_summary: evidenceSummary(evidence as Record<string, unknown>),
     },
   };
 }

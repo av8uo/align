@@ -18,6 +18,7 @@
   .badge.sim { background: #3a2b10; color: var(--warn); border: 1px solid #5c451d; }
   .badge.pro { background: #10303a; color: var(--blue); border: 1px solid #1d4a5c; }
   #replay.pulse { animation: pulse 1.2s ease-in-out infinite; }
+  .insight small.evidence { display: block; margin-top: 3px; color: var(--blue); opacity: .85; }
   .row.changed .val { color: var(--blue); font-weight: 700; animation: flash 1.6s ease-out; }
   @keyframes flash { 0% { background: rgba(94, 200, 255, .25); } 100% { background: transparent; } }
   @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(94, 200, 255, .6); } 50% { box-shadow: 0 0 0 8px rgba(94, 200, 255, 0); } }
@@ -164,9 +165,22 @@ async function refreshBalance() {
     else $("content").prepend(card.firstElementChild);
   } catch { /* server unreachable: keep the last widget */ }
 }
+// "Evidence: 4 events · 2 goals · 1 thing you said · 1 alternative explanation" — the basis, visible.
+function evidenceLine(i) {
+  const e = i.evidence_summary;
+  if (!e) return "";
+  const parts = [];
+  if (e.events) parts.push(`${e.events} event${e.events === 1 ? "" : "s"}`);
+  if (e.goals) parts.push(`${e.goals} goal${e.goals === 1 ? "" : "s"}`);
+  if (e.stated) parts.push(`${e.stated} thing${e.stated === 1 ? "" : "s"} you said`);
+  if (e.inferred) parts.push(`${e.inferred} inferred`);
+  if (e.alternatives) parts.push(`${e.alternatives} alternative explanation${e.alternatives === 1 ? "" : "s"}`);
+  const conf = typeof i.confidence === "number" ? ` · confidence ${Math.round(i.confidence * 100)}%${i.confidence < 0.75 ? " (working read)" : ""}` : "";
+  return parts.length ? `<small class="evidence">Evidence: ${parts.join(" · ")}${conf}</small>` : "";
+}
 function insightsCard(insights, question) {
   const items = insights.map((i) => `
-    <div class="insight sev${i.severity}"><div>${esc(i.title)}</div><small>${i.domains.map(esc).join(" · ")}</small></div>`).join("");
+    <div class="insight sev${i.severity}"><div>${esc(i.title)}</div><small>${i.domains.map(esc).join(" · ")}</small>${evidenceLine(i)}</div>`).join("");
   const q = question ? `<div class="q">❓ ${esc(question.text)}</div>` : "";
   return `<div class="card"><h3>What I noticed</h3>${items || '<span class="dimtxt">All clear.</span>'}${q}</div>`;
 }
@@ -219,7 +233,7 @@ function render(toolCalls, proactiveData) {
       html.push(balanceCard(d.balance || []), insightsCard(d.insights || [], d.question));
     }
     else if (name === "get_life_balance") html.push(balanceCard(d.balance || []));
-    else if (name === "get_insight") html.push(insightsCard([{ title: d.title, severity: d.severity, domains: d.domains || [] }], null));
+    else if (name === "get_insight") html.push(insightsCard([{ title: d.title, severity: d.severity, domains: d.domains || [], confidence: d.confidence, evidence_summary: d.evidence_summary }], null));
     else if (name === "propose_plan") html.push(planCard(d));
     else if (name === "apply_plan") html.push(appliedCard(d));
     else if (name === "whats_changed") html.push(outcomesCard(d));

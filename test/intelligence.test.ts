@@ -14,7 +14,7 @@ import { proposePlan, rankCandidates } from "../src/engine/solver.js";
 import { applyPlan } from "../src/engine/executor.js";
 import { correlate } from "../src/engine/correlate.js";
 import { g6Trend, runDetectors } from "../src/engine/detectors.js";
-import { remember, reviewMemory, parseCompletionAnswer } from "../src/tools/impl.js";
+import { remember, reviewMemory, parseCompletionAnswer, getDailyBriefing } from "../src/tools/impl.js";
 import { addDays } from "../src/engine/time.js";
 import { lifeBalance } from "../src/engine/balance.js";
 
@@ -134,6 +134,17 @@ describe("2. evidence-grounded insights", () => {
     expect(e.window).not.toBeNull();
     expect(e.alternatives[0]).toMatch(/heavy work week|several recent weeks/);
     metrics["insight_precision"] = `${surfaced.length} surfaced / ${rows.length} total (${rows.length - surfaced.length} suppressed as weak)`;
+  });
+
+  it("the briefing exposes an evidence summary per insight (counts, never the raw dump)", () => {
+    const db = fresh();
+    const b = getDailyBriefing(db, DEMO_TODAY);
+    const top = (b.data as { insights: Array<{ title: string; confidence: number; evidence_summary: { events: number; goals: number; stated: number; alternatives: number } }> }).insights[0]!;
+    expect(top.title).toMatch(/^Work is crowding/);
+    expect(top.evidence_summary.events).toBeGreaterThan(0);
+    expect(top.evidence_summary.goals).toBeGreaterThan(0);
+    expect(top.evidence_summary.alternatives).toBeGreaterThan(0);
+    expect(top.confidence).toBeLessThan(0.75);
   });
 
   it("does not claim causation from co-occurrence", () => {

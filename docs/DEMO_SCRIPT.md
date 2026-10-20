@@ -26,7 +26,7 @@
 > *"Every AI waits for a question. Align doesn't. It holds a model of your whole life — and speaks first when something matters. This is a real MCP server for Alexa+, running locally, inside a simulated Alexa+ host."*
 **Caption overlay:** `Real MCP server · Simulated Alexa+ host (labeled) · no cloud needed`
 
-## Beat 1 — It noticed, it connected, it asked — 0:12–0:50
+## Beat 1 — It noticed, it connected, it asked — 0:12–0:55
 **Action:** let the proactive briefing play fully (TTS).
 **What judges hear, unprompted:** work crowding out family and personal goals *"— I'm not fully sure yet, but the pattern is there"* (uncertainty honesty), the lowest balances, the report rescheduled four times, and ONE question: *"how are things with Sam lately?"*
 **What they see:** Life Balance bars (family 6, red), the cross-domain insight card, the question chip.
@@ -35,8 +35,13 @@
 **Action:** type → `Honestly we barely talk, work is eating everything.` → send.
 **Align:** records it; invites "fix it".
 **Caption:** `Your answer became evidence — confidence rose, the hedge is gone`
+**What they see:** under the insight, the evidence line — *Evidence: N events · 1 goal · 1 thing you said · 1 alternative explanation · confidence …%* — the basis of every claim, on screen.
 
-## Beat 2 — Correction → plan → approval → verified — 0:50–1:45
+**Action (the quiet rule, 4 s):** click chip **"How's my week looking?"** again.
+**Align:** *"Nothing new since my last briefing — work is crowding out your family time and personal goals; lowest balances family at 6 and personal at 11. Say "fix it" for a plan…"* — a recap, not a re-read.
+**Caption:** `Proactive ≠ nagging · it repeats nothing and stays quiet when nothing changed`
+
+## Beat 2 — Correction → plan → approval → verified — 0:55–1:45
 **Action:** click chip **"Actually, I hate morning gym"**.
 **Align:** *"Preference saved — I'll plan around it from now on."*
 

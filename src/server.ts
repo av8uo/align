@@ -47,7 +47,8 @@ export function latencyReport(): Record<string, { count: number; avg_ms: number;
 const zBalance = z.array(
   z.object({ domain: z.string(), score: z.number().nullable(), trend: z.string(), freshnessDays: z.number(), note: z.string() }),
 );
-const zInsightSummary = z.object({ id: z.string(), title: z.string(), severity: z.number(), domains: z.array(z.string()) });
+const zEvidenceSummary = z.object({ events: z.number(), goals: z.number(), stated: z.number(), inferred: z.number(), alternatives: z.number() });
+const zInsightSummary = z.object({ id: z.string(), title: z.string(), severity: z.number(), domains: z.array(z.string()), confidence: z.number().optional(), evidence_summary: zEvidenceSummary.optional() });
 const zChange = z
   .object({ op: z.string(), domain: z.string(), title: z.string() })
   .passthrough();
@@ -121,7 +122,7 @@ export function buildMcpServer(db: DatabaseSync, today: string): McpServer {
       outputSchema: {
         id: z.string().optional(), title: z.string().optional(), severity: z.number().optional(),
         domains: z.array(z.string()).optional(), evidence: z.record(z.string(), z.unknown()).optional(),
-        reasoning: z.string().optional(), confidence: z.number().optional(), record_count: z.number().optional(),
+        reasoning: z.string().optional(), confidence: z.number().optional(), record_count: z.number().optional(), evidence_summary: zEvidenceSummary.optional(),
       },
     },
     wrap("get_insight", (a: { insight_id: string }) => impl.getInsight(db, a.insight_id)),
