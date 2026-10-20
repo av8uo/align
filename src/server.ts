@@ -15,7 +15,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { z } from "zod";
 import type { DatabaseSync } from "node:sqlite";
 import { openDb, migrate } from "./db/schema.js";
-import { seed, DEMO_TODAY } from "./db/seed.js";
+import { blankStart, seed, DEMO_TODAY } from "./db/seed.js";
 import * as impl from "./tools/impl.js";
 import { briefingKey, orchestrate, newSession, type SessionState, type ToolCallRecord } from "./sim/orchestrator.js";
 import { makeBedrockBrain } from "./sim/bedrock.js";
@@ -439,6 +439,13 @@ export function createLifeOsHttpServer(db: DatabaseSync, today: string) {
       sessions.clear();
       currentToday = today;
       return json(res, 200, { today: currentToday, reset: true });
+    }
+    // Blank mind: a brand-new user — Align knows nothing and runs onboarding.
+    if (path === "/demo/fresh" && req.method === "POST") {
+      blankStart(db);
+      sessions.clear();
+      currentToday = today;
+      return json(res, 200, { today: currentToday, fresh: true });
     }
 
     // The proactive channel: the HOST polls this; Align speaks first only when

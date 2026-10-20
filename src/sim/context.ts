@@ -108,6 +108,9 @@ export function proactiveInstruction(computedText: string, help: Array<{ line: s
 /** Compact, attributable rendering for the host model (a few hundred tokens, not a memory dump). */
 export function renderContext(c: TurnContext): string {
   const lines: string[] = ["CONTEXT (from Align's records — cite, don't re-save, don't re-ask):"];
+  if (!c.facts.length && !c.goals.length && !c.preferences.length) {
+    lines.push("NEW USER: no goals, facts or preferences recorded yet — run the onboarding interview per your rules.");
+  }
   if (c.facts.length) lines.push(`Facts the user stated: ${c.facts.map((f) => f.content.replace(/[.!]+$/, "")).join("; ")}.`);
   if (c.preferences.length) lines.push(`Active preferences: ${c.preferences.map((p) => `"${p.content.replace(/[.!]+$/, "")}"${p.time ? ` → ${p.subject}: ${p.time}` : ""}`).join("; ")}.`);
   if (c.superseded.length) lines.push(`Superseded (older belief → current): ${c.superseded.map((s) => `"${s.old}" → "${s.by}"`).join("; ")}.`);

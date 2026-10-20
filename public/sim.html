@@ -117,6 +117,7 @@
       <label><input type="checkbox" id="dot" /> Echo Dot (voice-only) mode</label>
       <button id="jump" title="Advance the demo clock 7 days">⏭ One week later</button>
       <button id="reset" title="Re-seed the demo">↺ Reset</button>
+      <button id="fresh" title="Blank mind — Align meets a brand-new user">🆕 New user</button>
       <span id="brain" class="dimtxt"></span>
     </div>
     <div class="log" id="log"></div>
@@ -395,6 +396,7 @@ $("jump").onclick = async () => {
   proactive();
 };
 $("reset").onclick = async () => { await fetch("/demo/reset", { method: "POST" }); location.reload(); };
+$("fresh").onclick = async () => { await fetch("/demo/fresh", { method: "POST" }); location.reload(); };
 
 // ---------- input wiring
 $("send").onclick = () => { send($("input").value); $("input").value = ""; };

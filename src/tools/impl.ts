@@ -195,6 +195,18 @@ export function getDailyBriefing(db: DatabaseSync, today: string): ToolResult {
  * otherwise stays quiet (vision §8: proactive ≠ interrupting).
  */
 export function getProactiveNudge(db: DatabaseSync, today: string): ToolResult {
+  // A brand-new user: no goals, no memories — Align introduces itself and
+  // opens the onboarding interview instead of staying quiet.
+  const profile =
+    (db.prepare("SELECT COUNT(*) AS n FROM goals WHERE status='active'").get() as { n: number }).n +
+    (db.prepare("SELECT COUNT(*) AS n FROM memory_items WHERE status='active'").get() as { n: number }).n;
+  if (profile === 0) {
+    return {
+      text:
+        "Hi — I'm Align. I don't know you yet, and I'd like to. I help people improve their lives — family, health, personal growth, work, home, and money goals — by learning what matters to you and then watching your week against it. Let's start simple: who shares your life at home, and what matters most to you right now? You can skip anything, and everything I keep, you can review or delete.",
+      data: { quiet: false, proactive: true, onboarding: true },
+    };
+  }
   ensureEngineRun(db, today);
   const fresh =
     (db.prepare("SELECT COUNT(*) AS n FROM insights WHERE status='new'").get() as { n: number }).n +

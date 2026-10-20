@@ -90,6 +90,15 @@ const EVENTS: Ev[] = [
   ["Deep work", "work", 4, 10, 0, 12, 0, 1],
 ];
 
+/**
+ * Blank mind: a brand-new user. Everything wiped; Align knows nothing and
+ * must learn the person's life through the onboarding interview.
+ */
+export function blankStart(db: DatabaseSync): void {
+  for (const t of TABLES) db.exec(`DELETE FROM ${t};`);
+  db.prepare("INSERT INTO people (id, name, quiet_hours) VALUES (?, ?, ?)").run(PERSON_ID, "", "22:00-07:00");
+}
+
 export function seed(db: DatabaseSync): void {
   for (const t of TABLES) db.exec(`DELETE FROM ${t};`);
   const id = seedIdFactory();
