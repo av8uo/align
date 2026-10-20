@@ -86,6 +86,11 @@ const ROUTES: Route[] = [
   { match: /did it work|how did (my|the) week go|what('s| has) changed|results/i, run: () => ({ name: "whats_changed", args: {} }) },
   { match: /goal|streak|progress/i, run: () => ({ name: "get_goal_progress", args: {} }) },
   { match: /remember (that )?(.+)/i, run: (m) => ({ name: "remember", args: { content: m[2]!, kind: "fact" } }) },
+  // Spoken likes/dislikes become durable preferences the planner honors next time.
+  {
+    match: /\b(i )?(hate|love|prefer|would rather|don'?t like|dislike|not a fan of)\b.*\b(morning|evening|night|gym|spanish|date night)\b/i,
+    run: (m) => ({ name: "remember", args: { content: m.input ?? m[0]!, kind: "preference" } }),
+  },
   { match: /forget ([a-z]+_[a-z0-9]+)/i, run: (m) => ({ name: "forget", args: { memory_id: m[1]! } }) },
   { match: /what do you know about me|show (your |my )?memor/i, run: () => ({ name: "review_memory", args: {} }) },
   { match: /tell me more|why|evidence|explain/i, run: (_m, s) => (s.lastInsightId ? { name: "get_insight", args: { insight_id: s.lastInsightId } } : null) },

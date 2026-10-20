@@ -69,6 +69,28 @@ export function getDailyBriefing(db: DatabaseSync, today: string): ToolResult {
         }`
       : "";
 
+  // Streak celebrations: momentum made audible (≥2 weeks), and "back on track"
+  // revivals (hit last week after missing the week before).
+  const ctx = loadCtx(db, today);
+  let streakLine = "";
+  const streaks: Array<{ goal: string; weeks: number; revived: boolean }> = [];
+  for (const g of ctx.goals.filter((x) => x.status === "active" && x.domain !== "finance")) {
+    let weeks = 0;
+    for (let k = 1; k <= 8; k++) {
+      if (goalActual(ctx.events, g, addDays(today, -7 * k), addDays(today, -7 * (k - 1))) >= g.cadence_per_week) weeks++;
+      else break;
+    }
+    const missedBefore =
+      goalActual(ctx.events, g, addDays(today, -14), addDays(today, -7)) < g.cadence_per_week;
+    if (weeks >= 1) streaks.push({ goal: keywordOf(g.title), weeks, revived: weeks === 1 && missedBefore });
+  }
+  const best = streaks.sort((a, b) => b.weeks - a.weeks)[0];
+  if (best && best.weeks >= 2) streakLine = `${best.weeks} weeks in a row on your ${best.goal} goal — keep it going.`;
+  else {
+    const revived = streaks.find((s) => s.revived);
+    if (revived) streakLine = `And ${revived.goal} is back on track after missing a week.`;
+  }
+
   const worst = balance
     .filter((b) => b.score !== null)
     .sort((a, b) => a.score! - b.score!)
@@ -80,6 +102,7 @@ export function getDailyBriefing(db: DatabaseSync, today: string): ToolResult {
     `Here's your briefing. ${insights[0] ? hedge(insights[0].confidence, headline) : headline}.`,
     worst.length ? `Lowest balance: ${worst.join(", ")}.` : "",
     insights[1] ? `Also: ${insights[1].title}.` : "",
+    streakLine,
     q ? q.text : "",
   ]
     .filter(Boolean)
@@ -99,6 +122,7 @@ export function getDailyBriefing(db: DatabaseSync, today: string): ToolResult {
       })),
       question: q ?? null,
       outcomes,
+      streaks,
     },
   };
 }
@@ -209,7 +233,13 @@ export function remember(db: DatabaseSync, today: string, content: string, kind:
     `INSERT INTO memory_items (id, person_id, kind, content, confidence, source, question_id, status, created_at, updated_at)
      VALUES (?, ?, ?, ?, 1.0, 'user_said', NULL, 'active', ?, ?)`,
   ).run(id, personId, kind, content, now, now);
-  return { text: `Remembered as a ${kind}.`, data: { memory_id: id, kind, content } };
+  return {
+    text:
+      kind === "preference"
+        ? "Preference saved — I'll plan around it from now on."
+        : `Remembered as a ${kind}.`,
+    data: { memory_id: id, kind, content },
+  };
 }
 
 export function reviewMemory(db: DatabaseSync, filter?: string): ToolResult {

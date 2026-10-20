@@ -95,7 +95,7 @@ The host is a stand-in for Alexa+ (deployment there is private-preview gated); t
 
 ```bash
 npm install
-npm test        # 40 tests across 6 suites — engine, MCP wire, proactive, resilience
+npm test        # 42 tests across 6 suites — engine, MCP wire, proactive, resilience
 npm start       # http://localhost:3344/sim  (simulator) · /mcp (MCP endpoint) · /healthz · /stats
 ```
 
@@ -126,7 +126,7 @@ Mapping of [Alexa+ functional requirements](https://developer.amazon.com/docs/al
 | Real & working | Simulated (clearly labeled) | Deferred |
 |---|---|---|
 | MCP server (spec 2025-11-25), portable to any MCP host | The Alexa+ host: voice pipeline + **agent-initiated proactive speech** (no public API for add-on-initiated turns — filed as our #1 feature request) | Real calendar OAuth (`.ics`-style import + seeded data instead) |
-| Engine, memory, verified execution, learning loop — 40 automated tests | Echo Show / Echo Dot device frames | Multi-person households (schema ready) |
+| Engine, memory, verified execution, learning loop — 42 automated tests | Echo Show / Echo Dot device frames | Multi-person households (schema ready) |
 | Bedrock brain (authorization verified live; new-AWS-account day-one token quotas may throttle — fallback keeps the demo alive, by design) | — | Finance *advice* (policy); only user-stated goals with self-reported progress |
 | Hourly background engine runs | — | Real Alexa+ deployment (private preview gated) |
 

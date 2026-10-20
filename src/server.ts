@@ -91,6 +91,7 @@ export function buildMcpServer(db: DatabaseSync, today: string): McpServer {
         outcomes: z
           .array(z.object({ metric: z.string(), baseline: z.number(), observed: z.number(), verdict: z.string() }))
           .optional(),
+        streaks: z.array(z.object({ goal: z.string(), weeks: z.number(), revived: z.boolean() })).optional(),
       },
     },
     wrap("get_daily_briefing", (a: { date?: string }) => impl.getDailyBriefing(db, a.date ?? today)),

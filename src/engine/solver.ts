@@ -25,14 +25,47 @@ interface SlotTemplate {
   count: number;
 }
 
-/** Where a goal's sessions belong, per the user's stated preferences. */
-function slotTemplate(goal: GoalRow): SlotTemplate {
+/**
+ * Learned time-of-day preference for a goal, mined from preference memories.
+ * "I hate morning gym" / "I'd rather run in the evening" -> evening slots.
+ * This is how a spoken correction visibly changes the NEXT plan.
+ */
+export function timePreferenceFor(
+  goal: GoalRow,
+  memories: Array<{ kind: string; content: string; status: string }>,
+): "morning" | "evening" | null {
+  const kw = keywordOf(goal.title);
+  for (const m of memories) {
+    if (m.kind !== "preference" || m.status !== "active") continue;
+    const c = m.content.toLowerCase();
+    if (!c.includes(kw) && !c.includes(goal.domain)) continue;
+    const negative = /(hate|don'?t like|dislike|no more|not a fan|avoid|can'?t do)/.test(c);
+    const mentionsMorning = /morning/.test(c);
+    const mentionsEvening = /(evening|night)/.test(c);
+    if (negative && mentionsMorning) return "evening";
+    if (negative && mentionsEvening) return "morning";
+    if (!negative && /(prefer|love|like|rather|better)/.test(c)) {
+      if (mentionsEvening) return "evening";
+      if (mentionsMorning) return "morning";
+    }
+  }
+  return null;
+}
+
+/** Where a goal's sessions belong, per defaults + learned preferences. */
+function slotTemplate(goal: GoalRow, pref: "morning" | "evening" | null): SlotTemplate {
   const t = goal.title.toLowerCase();
   if (goal.domain === "family" && t.includes("date")) return { days: [4, 5, 3], sh: 19, sm: 0, eh: 22, em: 0, count: 1 };
   if (goal.domain === "family" && t.includes("call")) return { days: [5, 6], sh: 17, sm: 0, eh: 17, em: 30, count: 1 };
-  if (goal.domain === "health") return { days: [0, 2, 4, 1, 3], sh: 7, sm: 0, eh: 8, em: 0, count: goal.cadence_per_week };
-  // personal growth: mornings on weekdays
-  return { days: [0, 1, 2, 3, 4], sh: 7, sm: 30, eh: 8, em: 0, count: goal.cadence_per_week };
+  if (goal.domain === "health") {
+    return pref === "evening"
+      ? { days: [0, 2, 4, 1, 3], sh: 18, sm: 0, eh: 19, em: 0, count: goal.cadence_per_week }
+      : { days: [0, 2, 4, 1, 3], sh: 7, sm: 0, eh: 8, em: 0, count: goal.cadence_per_week };
+  }
+  // personal growth: mornings on weekdays unless the user said otherwise
+  return pref === "evening"
+    ? { days: [0, 1, 2, 3, 4], sh: 20, sm: 30, eh: 21, em: 0, count: goal.cadence_per_week }
+    : { days: [0, 1, 2, 3, 4], sh: 7, sm: 30, eh: 8, em: 0, count: goal.cadence_per_week };
 }
 
 function isFree(start: string, end: string, events: EventRow[], proposed: Change[]): boolean {
@@ -65,6 +98,11 @@ export function proposePlan(db: DatabaseSync, insightId: string, today: string):
   const evidence = JSON.parse(insight.evidence) as { collisions?: Array<[string, string]> };
   const events = db.prepare("SELECT * FROM events").all() as unknown as EventRow[];
   const goals = db.prepare("SELECT * FROM goals WHERE status='active'").all() as unknown as GoalRow[];
+  const memories = db.prepare("SELECT kind, content, status FROM memory_items").all() as Array<{
+    kind: string;
+    content: string;
+    status: string;
+  }>;
   const weekEnd = addDays(today, 7);
   const weekEvents = events.filter((e) => e.start >= `${today}T00:00:00` && e.start < `${weekEnd}T00:00:00`);
 
@@ -91,7 +129,7 @@ export function proposePlan(db: DatabaseSync, insightId: string, today: string):
     const scheduled = goalActual(events, g, today, weekEnd);
     const needed = Math.max(g.cadence_per_week - scheduled, 0);
     if (needed === 0) continue;
-    const tpl = slotTemplate(g);
+    const tpl = slotTemplate(g, timePreferenceFor(g, memories));
     let placed = 0;
     for (const day of tpl.days) {
       if (placed >= Math.min(needed, tpl.count)) break;

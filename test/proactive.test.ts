@@ -128,3 +128,21 @@ describe("one week later: measure, adapt, next knowledge gap", () => {
     expect(r.text).toContain("Sam");
   });
 });
+
+describe("visible preference learning (smarter about YOU)", () => {
+  it("a spoken dislike becomes a durable preference", async () => {
+    const r = await chat("Actually, I hate morning gym");
+    expect(r.toolCalls[0]?.name).toBe("remember");
+    expect(r.reply).toContain("Preference saved");
+  });
+
+  it("the NEXT plan proposes gym in the evening instead", async () => {
+    const r = await chat("Okay, fix it.");
+    const propose = r.toolCalls.find((c) => c.name === "propose_plan")!;
+    const gym = (propose.data as { changes: Array<{ title: string; start?: string }> }).changes.filter(
+      (c) => c.title === "Gym",
+    );
+    expect(gym.length).toBeGreaterThanOrEqual(2);
+    for (const g of gym) expect(g.start).toContain("T18:00");
+  });
+});
