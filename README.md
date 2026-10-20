@@ -27,7 +27,7 @@ What that feels like as a user:
 | Morning, proactively | *"Work ran late 4 evenings. You and Sam haven't had a night out in a month. One question — how are things with Sam lately?"* |
 | You: "Fix it." | *"Protect Friday evening for you two, move Thursday's workshop before Maya's recital, two Spanish mornings. Locked meetings untouched. This is an experiment — I'll measure it."* |
 | Before a decision | *"That client dinner collides with the recital — want a different slot?"* |
-| One week later, proactively | *"Last week's plan put 8 sessions on your calendar; I can't tell yet whether they happened. Did date night with Sam happen on Friday?"* — and only what you confirm becomes a result |
+| One week later, proactively | *"Last week's plan put 9 sessions on your calendar; I can't tell yet whether they happened. Did date night with Sam happen on Friday?"* — and only what you confirm becomes a result |
 | When nothing's wrong | **Nothing.** Proactive ≠ interrupting. |
 
 ## The whole of your life — not a slice of it

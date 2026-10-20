@@ -60,7 +60,7 @@
 
 ## Beat 4 — One week later: it refuses to guess, then measures — 2:00–2:35
 **Action:** click **⏭ One week later**.
-**Align, proactively:** *"Last week's plan put 8 sessions on your calendar; I can't tell yet whether they happened. … Did date night with Sam happen on Friday?"*
+**Align, proactively:** *"Last week's plan put 9 sessions on your calendar; I can't tell yet whether they happened. … Did date night with Sam happen on Friday?"*
 **Caption:** `Scheduled ≠ done · it asks instead of assuming`
 **Action:** type → `Yes, we did!` → Align records it and says family improved; gym, Spanish, Mom still unconfirmed.
 **Action:** type → `I went to the gym twice` → two sessions recorded as done, gym improved (1 → 2 confirmed).

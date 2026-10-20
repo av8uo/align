@@ -72,7 +72,25 @@ export function lifeBalance(ctx: Ctx): DomainScore[] {
       continue;
     }
     if (domain === "finance") {
-      out.push({ domain, score: null, trend: "flat", freshnessDays: fresh, note: "no progress logged this month" });
+      // Pacing on the user's own stated targets: logged this month vs what a steady
+      // pace would have reached by today. No finance goal → unknown; nothing logged → 0.
+      const goals = ctx.goals.filter((g) => g.domain === "finance" && g.status === "active");
+      const month = ctx.today.slice(0, 7);
+      const day = Number(ctx.today.slice(8, 10));
+      const daysInMonth = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).getUTCDate();
+      let target = 0;
+      let logged = 0;
+      for (const g of goals) {
+        target += Number(g.title.match(/\$(\d+)/)?.[1] ?? 0);
+        logged += ctx.goalLogs.filter((l) => l.goal_id === g.id && l.at.startsWith(month)).reduce((a, l) => a + (l.value ?? 0), 0);
+      }
+      if (target === 0) {
+        out.push({ domain, score: null, trend: "flat", freshnessDays: fresh, note: "no finance goal set" });
+        continue;
+      }
+      const expected = target * (day / daysInMonth);
+      const score = Math.round(Math.max(0, Math.min(100, (logged / expected) * 100)));
+      out.push({ domain, score, trend: "flat", freshnessDays: fresh, note: logged === 0 ? `nothing logged yet in ${month}` : `$${logged} of $${target} this month` });
       continue;
     }
     const adh = goalAdherence(ctx, domain, weekFrom, ctx.today);

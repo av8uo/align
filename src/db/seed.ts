@@ -56,6 +56,7 @@ const EVENTS: Ev[] = [
   ["Client call", "work", -18, 16, 0, 17, 0],
   ["Sprint planning overflow", "work", -18, 17, 30, 19, 0], // mild single overrun
   ["Call Mom", "family", -17, 17, 0, 17, 30], // last call-mom, 17 days ago
+  ["Groceries run", "household", -16, 10, 0, 11, 0], // household goal: done 3 weeks ago…
   ["Family dinner", "family", -17, 18, 30, 20, 0],
 
   // ---- histB (2 weeks ago): decline begins
@@ -67,6 +68,7 @@ const EVENTS: Ev[] = [
   ["Release prep", "work", -12, 17, 0, 19, 30], // overrun
   ["Incident review", "work", -11, 16, 0, 20, 0], // overrun
   ["Deep work", "work", -10, 10, 0, 12, 0, 1],
+  ["Groceries run", "household", -9, 10, 0, 11, 0], // …and 2 weeks ago, then dropped
 
   // ---- histC (last week): the bad week — 4 evening overruns, 1 gym, nothing else
   ["Exec review", "work", -7, 17, 0, 20, 0],
@@ -117,6 +119,7 @@ export function seed(db: DatabaseSync): void {
     ["goal_spanish", "personal", "Spanish practice", 3],
     ["goal_mom", "family", "Call Mom", 1],
     ["goal_house", "finance", "Save $500/month toward the house fund", 1],
+    ["goal_groceries", "household", "Groceries run", 1],
   ];
   for (const [gid, domain, title, cadence] of goals) {
     insGoal.run(gid, PERSON_ID, domain, title, cadence, dayAt(-30, 9, 0));

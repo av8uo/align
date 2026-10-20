@@ -46,6 +46,7 @@ function slotTemplates(goal: GoalRow, pref: "morning" | "evening" | null): SlotT
   const t = goal.title.toLowerCase();
   if (goal.domain === "family" && t.includes("date")) return [{ days: [4, 5, 3], sh: 19, sm: 0, eh: 22, em: 0, count: 1 }];
   if (goal.domain === "family" && t.includes("call")) return [{ days: [5, 6], sh: 17, sm: 0, eh: 17, em: 30, count: 1 }];
+  if (goal.domain === "household") return [{ days: [5, 6, 2], sh: 10, sm: 0, eh: 11, em: 0, count: goal.cadence_per_week }];
   const n = goal.cadence_per_week;
   const health = {
     morning: { days: [0, 2, 4, 1, 3], sh: 7, sm: 0, eh: 8, em: 0, count: n },

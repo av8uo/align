@@ -27,7 +27,7 @@ describe("seed demo preconditions", () => {
     const person = db.prepare("SELECT * FROM people WHERE id=?").get(PERSON_ID);
     expect(person).toBeTruthy();
     const goals = db.prepare("SELECT domain FROM goals WHERE person_id=?").all(PERSON_ID) as Array<{ domain: string }>;
-    expect(goals.length).toBe(5);
+    expect(goals.length).toBe(6);
     expect(new Set(goals.map((g) => g.domain)).size).toBeGreaterThanOrEqual(4);
     const kinds = db.prepare("SELECT DISTINCT kind FROM memory_items").all() as Array<{ kind: string }>;
     for (const k of ["fact", "preference", "commitment", "experience"]) {
