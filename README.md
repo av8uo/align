@@ -6,11 +6,13 @@
 
 Built for the **Amazon Developer Hackathon 2026** — Alexa+ track + AWS Builder mini challenge.
 
+> ⚠️ **Platform status, up front:** the **MCP server is real** — spec 2025-11-25, Streamable HTTP, runs unchanged under any MCP host (we demo it inside Claude). The **Alexa+ host in our demo is simulated** (voice pipeline, device frames, and agent-initiated proactive speech), because Alexa+ add-on deployment is private-preview gated and no public API exists for add-on-initiated turns — that API is our #1 feature request. Every simulated element is labeled as such, in the demo UI and below.
+
 ---
 
 ## What it is
 
-An **autonomous optimization agent** that maintains a persistent computational model of a person's life, continuously analyzes it for deviations between *stated values* and *observed behavior*, and executes verified interventions to close that gap — measuring its own efficacy and retraining its decision weights on the results.
+An **autonomous optimization agent** that maintains a persistent computational model of a person's life, continuously analyzes it for deviations between *stated values* and *observed behavior*, and executes verified interventions to close that gap — measuring its own efficacy and updating its learned probability estimates from the measured outcomes.
 
 The control loop runs continuously, unprompted:
 
@@ -45,7 +47,7 @@ Life areas are **configuration, not code** in Align's engine: the same detectors
 | **Long-term financial goals** | *"You committed $500/month to the house fund; October logged $450 — $50 short, on pace for the year."* (Pacing arithmetic on **your** stated goals and **your** numbers — never investment advice.) |
 | **Household operations** | Chore and maintenance cadences run on the same goal engine as everything else. |
 
-The demo persona exercises career ↔ marriage ↔ family ↔ health ↔ growth ↔ savings **end-to-end**; adding any other area is a goal definition, not new code.
+**How these map to the scorecard:** the Life Balance scorecard scores **six domains** — `family` (marriage, children, extended family), `health`, `personal` (growth, learning, friends), `work` (career and business strategy), `household`, and `finance` (goal pacing). The ten areas above are lenses onto those six: each is expressed as goals, memories, and events inside one of the scored domains, analyzed by the same configurable engine. The demo persona exercises career ↔ marriage ↔ family ↔ health ↔ growth ↔ savings **end-to-end**; adding any other area is a goal definition, not new code.
 
 ## It thinks while no one is talking to it
 
@@ -139,9 +141,9 @@ Demo flow in the simulator: the proactive briefing opens by itself → answer it
 
 Bedrock brain: set AWS credentials + `LIFEOS_LLM=bedrock` (see [docs/AWS_SETUP.md](docs/AWS_SETUP.md)); without it the deterministic rules brain serves the full demo. `/stats` reports live per-tool latency.
 
-## Alexa+ certification readiness
+## Alexa+ functional requirements coverage
 
-Mapping of [Alexa+ functional requirements](https://developer.amazon.com/docs/alexaplus/add-ons/functional-requirements) to implementation:
+Mapping of [Alexa+ functional requirements](https://developer.amazon.com/docs/alexaplus/add-ons/functional-requirements) to implementation. This is **implementation evidence from our own tests** — not certification approval by Amazon, which requires their review:
 
 | Requirement | How Align meets it |
 |---|---|
