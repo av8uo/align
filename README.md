@@ -66,6 +66,14 @@ subject to: hard constraints (locked events, preferences, quiet hours)
 
 Both estimates are shrunk toward a cold-start prior with the sample size kept visible (`n` is in every plan's `ranking`), and they are computed from **completion evidence** — what you confirmed happened — never from what was merely on the calendar. The kind is `create:<domain>:<morning|evening>`, so "evening gym gets done, morning gym gets skipped" changes the next plan's slot ranking; a kind is suppressed only once evidence says so (lower bound < 0.2 with n ≥ 4). Inconclusive outcomes are excluded, never counted as failures. A declined plan is recorded as acceptance evidence. ([src/engine/learn.ts](src/engine/learn.ts), [src/engine/solver.ts](src/engine/solver.ts))
 
+## How a conversation turn works
+
+Every turn, the host (Claude via the Claude API / Bedrock, or the deterministic rules brain) gets a **context block built from Align's records for that turn** ([src/sim/context.ts](src/sim/context.ts)): the facts and preferences the user stated (filtered by relevance, never a memory dump), goals with last week's adherence, commitments, the one open question and what it decides, questions already asked recently, superseded beliefs, current insights with confidence, the pending plan, and the last few user turns. Durable knowledge lives in SQLite; conversational state lives in the server session (it survives a reload of the tab, expires with it, and never deletes memory).
+
+Learning is operational, not decorative: a stated preference is parsed into **subject × time × polarity** ([src/engine/preferences.ts](src/engine/preferences.ts)) so "I hate morning workouts", "no gym in the mornings" and "mornings work better for me now" are understood as one duplicate and one change of mind — the duplicate is not stored, the change of mind supersedes the earlier note (kept as `corrected`), and the next plan follows it without being told. Corrections of facts ("Sam, not Samantha") retire the fact that said otherwise. A changed goal target sets the pending plan aside.
+
+The rules brain classifies each message into one intent ([src/sim/intent.ts](src/sim/intent.ts): greeting, support, question about what Align knows, preference, correction, fact, goal update, plan request, approval/rejection, completion report, what-if, ambiguous answer…) and each intent has its own action — a support message gets an acknowledgement in the user's own words and no tool call; a hedge ("I think I went once or twice, not sure") never records a completion. Its limits are real: no language understanding beyond those patterns, which is why the demo runs on the LLM host.
+
 ## Core subsystems
 
 1. **Life-State Model** — persistent world-model (SQLite): events, cadence goals, and an 8-type memory system (`fact | preference | goal_note | experience | pattern | hypothesis | commitment | outcome`), every item carrying confidence and provenance (`user_said` vs `engine_inferred`). Facts are never conflated with hypotheses.
@@ -135,7 +143,7 @@ Requirements: **Node.js ≥ 24** (uses the built-in `node:sqlite`), any OS. No A
 
 ```bash
 npm install
-npm test        # 109 tests across 10 suites — engine, MCP wire, proactive quiet rule, host brains, intelligence evaluation
+npm test        # 122 tests across 12 suites — engine, MCP wire, proactive quiet rule, host brains, intelligence + conversation evaluations
 npm start       # http://localhost:3344/sim  (simulator) · /mcp (MCP endpoint) · /healthz · /stats
 ```
 
@@ -165,11 +173,11 @@ Whatever the setting, any LLM failure (bad key, quota, refusal) falls back to th
 ### Test results (Oct 20, 2026)
 
 ```
-Test Files  10 passed (10)
-     Tests  109 passed (109)
+Test Files  12 passed (12)
+     Tests  122 passed (122)
 ```
 
-Suites: `engine` (detectors, correlator, solver, learning), `schema`, `seed`, `mcp` (wire-level: full two-week demo arc over Streamable HTTP, latency budget asserted), `proactive` (quiet rule, honest week-later flow), `orchestrator` (LLM failure → rules fallback, conversation routing), `bedrock` / `anthropic` (host loops with injected transports), `memory`, and `intelligence` — the evaluation suite on fixed fixtures. Its printed metrics on this fixture: **insight precision** 5 surfaced / 5 total with a planted no-history goal suppressed as weak; **question usefulness** 4 of 5 discovered gaps worth asking in week 2, top = the completion question (leverage 1); **outcome data completeness** 2 of 3 metrics fully confirmed after check-ins, health baseline 1; **ranking change** evening gym 0.87 (n=4) vs morning 0.20 (n=4, lower bound 0.04) → evening chosen, morning suppressed — without any stated preference. Run `npm test` to reproduce.
+Suites: `engine` (detectors, correlator, solver, learning), `schema`, `seed`, `mcp` (wire-level: full two-week demo arc over Streamable HTTP, latency budget asserted), `proactive` (quiet rule, honest week-later flow), `orchestrator` (LLM failure → rules fallback, conversation routing), `bedrock` / `anthropic` (host loops with injected transports), `memory`, `intelligence` — the evaluation suite on fixed fixtures, `conversation` — twelve multi-turn scenarios through the real HTTP server (new preference → plan respects it; duplicate → no second memory; change of mind → superseded; goal change → plan reconsidered; asked-and-answered → not repeated; support → no forced tool; ambiguous completion → nothing marked; correction used afterwards; server restart; session restart; approve/reject; LLM unavailable), and `context-eval` — a per-turn scorecard (facts available vs used, tools, persisted changes, repetition, unnecessary questions, false completions, unsupported claims). Its printed metrics on this fixture: **insight precision** 5 surfaced / 5 total with a planted no-history goal suppressed as weak; **question usefulness** 4 of 5 discovered gaps worth asking in week 2, top = the completion question (leverage 1); **outcome data completeness** 2 of 3 metrics fully confirmed after check-ins, health baseline 1; **ranking change** evening gym 0.87 (n=4) vs morning 0.20 (n=4, lower bound 0.04) → evening chosen, morning suppressed — without any stated preference. Run `npm test` to reproduce.
 
 ## Alexa+ functional requirements coverage
 
@@ -194,7 +202,7 @@ Mapping of [Alexa+ functional requirements](https://developer.amazon.com/docs/al
 | Real & working | Simulated (clearly labeled) | Deferred |
 |---|---|---|
 | MCP server (spec 2025-11-25), portable to any MCP host | The Alexa+ host: voice pipeline + **agent-initiated proactive speech** (no public API for add-on-initiated turns — filed as our #1 feature request) | Real calendar OAuth (`.ics`-style import + seeded data instead) |
-| Engine, memory, verified execution, learning loop — 109 automated tests | Echo Show / Echo Dot device frames | Multi-person households (schema ready) |
+| Engine, memory, verified execution, learning loop — 122 automated tests | Echo Show / Echo Dot device frames | Multi-person households (schema ready) |
 | LLM host brain: Claude via the Claude API voices the demo video; the Bedrock integration (Converse tool-use loop, circuit breaker, fallback) is implemented and tested with injected failures | — | **Bedrock as the live voice:** at submission time every Bedrock call is throttled by a new-account daily token quota (AWS Support case filed), so the demo uses the Claude API path — same tools, same engine, different plumbing |
 | Hourly background engine runs | — | **Hosted deployment:** the ECS Express Mode deploy script is complete and preflight-tested, but **not provisioned** — a deliberate no-cost decision; the project runs locally in two commands |
 | — | — | Finance *advice* (policy); only user-stated goals with self-reported progress · Real Alexa+ deployment (private preview gated) |
@@ -209,6 +217,8 @@ Mapping of [Alexa+ functional requirements](https://developer.amazon.com/docs/al
 - Learned estimates are per `domain × time-of-day`; outcome verdicts count at domain level for both times of day.
 - `apply_plan` writes are verified per change but not wrapped in a transaction; a mid-way failure leaves the plan `approved` with partial, journaled changes.
 - The server has no authentication and permissive CORS: it is a local demo, not a hosted service.
+- The deterministic rules brain understands only the intents in `src/sim/intent.ts`; anything else gets a clarification. The LLM host is what makes free conversation work, and its per-turn context is relevance-filtered, so a fact that shares no keyword with the current message may be left out of that turn.
+- Preference parsing recognizes time-of-day preferences (morning/evening) for the demo's goal families; other preference types are stored as plain text and do not steer the planner.
 - Single user, single household; English only.
 
 ## AWS (Builder mini challenge)

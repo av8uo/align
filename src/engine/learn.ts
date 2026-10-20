@@ -119,13 +119,18 @@ export function recordCompletions(db: DatabaseSync, today: string, reports: Comp
   const events = db.prepare("SELECT * FROM events WHERE person_id=? AND start < ? AND start >= ?").all(personId, `${today}T23:59:59`, `${addDays(today, -14)}T00:00:00`) as unknown as EventRow[];
   const goals = db.prepare("SELECT * FROM goals WHERE person_id=?").all(personId) as unknown as GoalRow[];
   const marked: string[] = [];
-  const mark = db.prepare("UPDATE events SET completion=?, completion_source='user_said', completed_at=? WHERE id=? AND completion IN ('scheduled','unknown')");
+  // What the user states outranks an imported assumption (seed), but never an
+  // earlier statement of their own.
+  const mark = db.prepare("UPDATE events SET completion=?, completion_source='user_said', completed_at=? WHERE id=? AND (completion IN ('scheduled','unknown') OR completion_source='seed')");
   for (const r of reports) {
     const goal = r.goal_id ? goals.find((g) => g.id === r.goal_id) : r.title ? goals.find((g) => keywordOf(g.title) === keywordOf(r.title!) || g.title.toLowerCase().includes(r.title!.toLowerCase())) : undefined;
     const kw = goal ? keywordOf(goal.title) : (r.title ?? "").toLowerCase();
     if (!kw) continue;
     // Skip events already marked, including ones marked earlier in this same call.
-    let candidates = events.filter((e) => e.title.toLowerCase().includes(kw) && (e.completion === "scheduled" || e.completion === "unknown") && !marked.includes(e.id));
+    // Without a named day only unconfirmed sessions qualify; with a named day an
+    // imported (seed) record may be corrected too — the user is the authority on their own past.
+    const correctable = (e: EventRow) => e.completion === "scheduled" || e.completion === "unknown" || (!!r.day && e.completion_source === "seed");
+    let candidates = events.filter((e) => e.title.toLowerCase().includes(kw) && correctable(e) && !marked.includes(e.id));
     if (r.day) {
       const wd = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"].indexOf(r.day.toLowerCase());
       candidates = candidates.filter((e) => (/^\d{4}-\d{2}-\d{2}$/.test(r.day!) ? e.start.startsWith(r.day!) : wd >= 0 && new Date(`${e.start}Z`).getUTCDay() === (wd + 1) % 7));

@@ -44,7 +44,13 @@ Rules:
 - Save a preference or fact once. If a tool answers "already noted", don't call it again and don't announce saving it.
 - Completion evidence: when the user says what actually happened ("we did date night", "skipped gym Friday", "went twice"), call check_in with completions=[{title|goal_id, status: done|missed, count?, day?}]. Mark ONLY what they explicitly said; never assume a scheduled session happened.
 - If the user declines to answer Align's question, call check_in with question_id and decline=true. If they decline a proposed plan, call apply_plan with reject=true (approve=false).
+- A feeling on its own ("I'm exhausted") is not a memory: acknowledge it in the user's words; call check_in only when the message carries a fact, an answer to the open question, or completion evidence.
+- To change a goal's target ("gym twice a week now"), call set_goal with the goal's EXACT existing title — that updates it, nothing is duplicated.
+- "Thanks" / "bye": one short sentence, no reminders, no new information.
+- A question outside the user's own data (general knowledge): answer in one sentence if trivial, then stay on their life; never call a tool for it.
 - Self-reported progress with an amount ("I put in 450"): call get_goal_progress to find the matching goal_id, then check_in with goal_id and amount. Don't ask which goal if only one goal fits.
+- A CONTEXT block is given each turn from Align's records. Use it: never re-save what it already lists, never re-ask what it answers, never announce "I've saved that" for something already there, never offer a plan again once the context says you already did. Cite it naturally ("you mentioned Leo has football on Wednesdays").
+- Reflect the user's actual words before anything else; one focused follow-up at most, only if the answer would change what you do; no forced positivity, no invented details, no summaries nobody asked for.
 - Outcomes: say "confirmed" only for what check_in recorded; unconfirmed sessions are "unknown", never "done". Never say a plan "worked" without confirmed evidence.`;
 
 export interface McpToolDef {
@@ -135,6 +141,8 @@ export class BedrockCircuit {
 export interface BedrockBrainOptions {
   /** Injectable transport (tests); defaults to a real BedrockRuntimeClient. */
   converse?: (input: ConverseCommandInput) => Promise<ConverseCommandOutput>;
+  /** Per-turn context block from Align's records (src/sim/context.ts). */
+  context?: (state: SessionState, text: string) => string;
   circuit?: BedrockCircuit;
   log?: (s: string) => void;
 }
@@ -177,6 +185,7 @@ export function makeBedrockBrain(listTools: () => Promise<McpToolDef[]>, opts: B
       { role: "user" as const, content: [{ text: `${context}\n\nUser says: ${text}` }] },
     ];
 
+    const contextBlock = opts.context?.(state, text); // once per turn, stable across tool rounds
     const toolCalls: ToolCallRecord[] = [];
     let inTok = 0;
     let outTok = 0;
@@ -185,7 +194,7 @@ export function makeBedrockBrain(listTools: () => Promise<McpToolDef[]>, opts: B
       try {
         res = await converse({
           modelId,
-          system: [{ text: SYSTEM }],
+          system: contextBlock !== undefined ? [{ text: SYSTEM }, { text: contextBlock }] : [{ text: SYSTEM }],
           messages,
           toolConfig: { tools: await tools() },
           inferenceConfig: { maxTokens: 700, temperature: 0.4 },

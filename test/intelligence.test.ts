@@ -16,6 +16,7 @@ import { correlate } from "../src/engine/correlate.js";
 import { g6Trend, runDetectors } from "../src/engine/detectors.js";
 import { remember, reviewMemory, parseCompletionAnswer } from "../src/tools/impl.js";
 import { addDays } from "../src/engine/time.js";
+import { lifeBalance } from "../src/engine/balance.js";
 
 const fresh = () => {
   const db = new DatabaseSync(":memory:");
@@ -192,6 +193,19 @@ describe("4. honest outcome measurement", () => {
     metrics["outcome_data_completeness"] = `${complete} of ${rows.length} metrics fully confirmed after check-ins; health baseline=${rows.find((x) => String(x.metric).startsWith("health"))!.baseline}`;
   });
 
+  it("a statement about a named day corrects an imported record, and the balance score moves", () => {
+    const db = fresh();
+    const before = lifeBalance(loadCtx(db, DEMO_TODAY)).find((b) => b.domain === "health")!.score!;
+    const marked = recordCompletions(db, DEMO_TODAY, [{ title: "gym", status: "missed", day: "Friday" }], `${DEMO_TODAY}T08:00:00`);
+    expect(marked.length).toBe(1);
+    expect(db.prepare("SELECT completion, completion_source FROM events WHERE id=?").get(marked[0]!)).toEqual({ completion: "missed", completion_source: "user_said" });
+    expect(lifeBalance(loadCtx(db, DEMO_TODAY)).find((b) => b.domain === "health")!.score!).toBeLessThan(before);
+    // Without a named day, imported history is left alone.
+    expect(recordCompletions(fresh(), DEMO_TODAY, [{ title: "gym", status: "missed" }], `${DEMO_TODAY}T08:00:00`).length).toBe(0);
+    // A user statement is never overwritten by a later contradictory one for the same event.
+    expect(recordCompletions(db, DEMO_TODAY, [{ title: "gym", status: "done", day: "Friday" }], `${DEMO_TODAY}T09:00:00`).length).toBe(0);
+  });
+
   it("the spoken answer to a completion question only marks what was said; ambiguity stays unknown", () => {
     expect(parseCompletionAnswer("Yes, we did!", 1)).toEqual({ done: 1, missed: 0 });
     expect(parseCompletionAnswer("No, it fell through", 1)).toEqual({ done: 0, missed: 1 });
@@ -286,6 +300,18 @@ describe("6. longitudinal reasoning", () => {
     const gym = plan.changes.filter((c) => c.title === "Gym");
     expect(gym.length).toBeGreaterThan(0);
     for (const g of gym) expect(g.start).toContain("T07:00");
+  });
+
+  it("a third-person paraphrase from an LLM host ('The user hates morning workouts.') is understood and supersedes/dedupes like the original", () => {
+    const db = fresh();
+    remember(db, DEMO_TODAY, "The user hates morning workouts.", "preference");
+    const r = runEngine(db, DEMO_TODAY);
+    const plan = proposePlan(db, r.insightIds[0]!, DEMO_TODAY);
+    for (const g of plan.changes.filter((c) => c.title === "Gym")) expect(g.start).toContain("T18:00");
+    const dup = remember(db, DEMO_TODAY, "User dislikes morning workouts; avoid scheduling gym in the morning.", "preference");
+    expect(dup.data).toMatchObject({ duplicate: true });
+    const flip = remember(db, addDays(DEMO_TODAY, 1), "The user now prefers morning workouts.", "preference");
+    expect(flip.data.supersedes_id).toBeTruthy();
   });
 
   it("duplicate memories are not stored twice; equivalent phrasing dedupes", () => {

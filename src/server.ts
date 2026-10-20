@@ -20,6 +20,7 @@ import * as impl from "./tools/impl.js";
 import { briefingKey, orchestrate, newSession, type SessionState, type ToolCallRecord } from "./sim/orchestrator.js";
 import { makeBedrockBrain } from "./sim/bedrock.js";
 import { makeAnthropicBrain } from "./sim/anthropic.js";
+import { buildContext, renderContext } from "./sim/context.js";
 import { runEngine } from "./engine/engine.js";
 import { addDays } from "./engine/time.js";
 
@@ -155,6 +156,7 @@ export function buildMcpServer(db: DatabaseSync, today: string): McpServer {
       outputSchema: {
         memory_id: z.string().nullable(), pacing: z.string().nullable(), engine_refreshed: z.boolean(),
         completions_recorded: z.array(z.string()).optional(), outcomes_measured: z.array(z.object({ metric: z.string(), verdict: z.string(), unknown: z.number() })).optional(), declined: z.boolean().optional(),
+        clarification_needed: z.boolean().optional(),
       },
     },
     wrap(
@@ -188,13 +190,13 @@ export function buildMcpServer(db: DatabaseSync, today: string): McpServer {
     {
       title: "Set a goal",
       description:
-        "Create a recurring life goal to track ('gym three times a week', 'weekly date night', 'Spanish practice 3x'). Cadence is sessions per week.",
+        "Create a recurring life goal to track ('gym three times a week', 'weekly date night', 'Spanish practice 3x'), or UPDATE the target of an existing goal by using its exact title (no duplicate is created). Cadence is sessions per week.",
       inputSchema: {
         title: z.string(),
         domain: z.enum(["family", "health", "personal", "work", "household", "finance"]),
         cadence_per_week: z.number().int().min(1).max(14),
       },
-      outputSchema: { goal_id: z.string(), title: z.string(), domain: z.string(), cadence_per_week: z.number() },
+      outputSchema: { goal_id: z.string(), title: z.string(), domain: z.string(), cadence_per_week: z.number() , updated: z.boolean().optional(), previous_cadence: z.number().optional() },
     },
     wrap("set_goal", (a: { title: string; domain: "family" | "health" | "personal" | "work" | "household" | "finance"; cadence_per_week: number }) =>
       impl.setGoal(db, today, a),
@@ -248,7 +250,7 @@ export function buildMcpServer(db: DatabaseSync, today: string): McpServer {
       outputSchema: {
         planId: z.string().optional(), plan_id: z.string().optional(),
         executed: z.array(z.object({ op: z.string(), title: z.string(), ok: z.boolean(), detail: z.string() })).optional(),
-        allVerified: z.boolean().optional(), requires_approval: z.boolean().optional(),
+        allVerified: z.boolean().optional(), requires_approval: z.boolean().optional(), status: z.string().optional(),
       },
     },
     wrap("apply_plan", (a: { plan_id: string; approve: boolean; reject?: boolean }) => impl.applyPlanTool(db, today, a.plan_id, a.approve, a.reject ?? false)),
@@ -403,7 +405,8 @@ export function createLifeOsHttpServer(db: DatabaseSync, today: string) {
   // Bedrock (AWS Builder path), "anthropic" = Claude via the Claude API,
   // anything else = the deterministic rules brain only.
   const llm = process.env.LIFEOS_LLM;
-  const bedrockBrain = llm === "bedrock" ? makeBedrockBrain(listTools) : llm === "anthropic" ? makeAnthropicBrain(listTools) : undefined;
+  const context = (state: SessionState, text: string) => renderContext(buildContext(db, state, text, currentToday));
+  const bedrockBrain = llm === "bedrock" ? makeBedrockBrain(listTools, { context }) : llm === "anthropic" ? makeAnthropicBrain(listTools, { context }) : undefined;
   const brainName = llm === "bedrock" ? "bedrock" : llm === "anthropic" ? "anthropic" : "rules";
 
   const srv = createServer(async (req: IncomingMessage, res: ServerResponse) => {
@@ -412,6 +415,9 @@ export function createLifeOsHttpServer(db: DatabaseSync, today: string) {
     const path = url.pathname;
 
     if (req.method === "OPTIONS") return res.writeHead(204).end();
+    // Simulator helper: current Life Balance scores, so the widget can refresh
+    // after every turn (same computation as the get_life_balance tool).
+    if (path === "/balance") return json(res, 200, impl.getLifeBalance(db, currentToday).data);
     if (path === "/healthz") {
       // When the Bedrock circuit is open, replies come from the rules brain
       // even though the Bedrock brain is configured — surfaced here honestly.

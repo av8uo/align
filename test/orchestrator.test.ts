@@ -185,13 +185,14 @@ describe("rules brain: small talk, declines, direct edits, forget-by-text, what-
     expect(out.toolCalls[0]!.args).toEqual({ title: "gym", day: "Friday", start_time: "18:00" });
   });
 
-  it("answers a feeling with empathy and still records it as the answer to the open question", async () => {
+  it("a feeling is acknowledged in the user's own words, with no tool call, and the open question stays open", async () => {
     const log: string[] = [];
     const s = withQuestion();
     const out = await orchestrate("I'm exhausted", s, { callTool: async (name, args) => { log.push(name); return { name, args, text: "noted", data: {}, isError: false }; } });
-    expect(log).toEqual(["check_in"]);
-    expect(out.toolCalls[0]!.args).toMatchObject({ question_id: "q_1" });
-    expect(out.reply).toMatch(/^I'm sorry it's been that heavy/);
+    expect(log).toEqual([]);
+    expect(out.reply).toMatch(/^That's a lot — i'm exhausted\./);
+    expect(out.reply).toContain("How are things with Sam lately?"); // the open question is mentioned once, not re-asked verbatim later
+    expect(s.lastQuestionId).toBe("q_1");
   });
 });
 
@@ -226,9 +227,13 @@ describe("rules brain: review fixes", () => {
     expect(log[0]).toMatchObject({ name: "check_in", args: { goal_id: "goal_house", amount: 450 } });
   });
 
-  it("records a bare yes/no as the answer while a question is open", async () => {
+  it("records a bare yes/no as the answer while a YES/NO question is open (not for an open-ended one)", async () => {
     const log: Array<{ name: string; args: Record<string, unknown> }> = [];
     const s = withQuestion();
+    s.lastQuestionText = "Did date night with Sam happen on Friday?";
+    const stray = await orchestrate("No", { ...withQuestion() }, { callTool: recorder(log) }); // open-ended question: "No" is not an answer
+    expect(log).toEqual([]);
+    expect(stray.reply).toBe("Okay.");
     await orchestrate("No", s, { callTool: recorder(log) });
     expect(log[0]).toMatchObject({ name: "check_in", args: { question_id: "q_1", content: "No" } });
   });

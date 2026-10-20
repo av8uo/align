@@ -152,7 +152,7 @@ describe("visible preference learning (smarter about YOU)", () => {
   it("a spoken dislike becomes a durable preference", async () => {
     const r = await chat("Actually, I hate morning gym");
     expect(r.toolCalls[0]?.name).toBe("remember");
-    expect(r.reply).toContain("Preference saved");
+    expect(r.reply).toMatch(/evening/); // reflects what was understood: gym in the evening from now on
   });
 
   it("the NEXT plan proposes gym in the evening instead", async () => {

@@ -17,6 +17,10 @@
   .badge { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 600; letter-spacing: .4px; }
   .badge.sim { background: #3a2b10; color: var(--warn); border: 1px solid #5c451d; }
   .badge.pro { background: #10303a; color: var(--blue); border: 1px solid #1d4a5c; }
+  #replay.pulse { animation: pulse 1.2s ease-in-out infinite; }
+  .row.changed .val { color: var(--blue); font-weight: 700; animation: flash 1.6s ease-out; }
+  @keyframes flash { 0% { background: rgba(94, 200, 255, .25); } 100% { background: transparent; } }
+  @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(94, 200, 255, .6); } 50% { box-shadow: 0 0 0 8px rgba(94, 200, 255, 0); } }
 
   header { max-width: 1240px; margin: 0 auto; padding: 14px 16px 0; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
   header h1 { font-size: 20px; } header .sub { color: var(--dim); font-size: 13px; }
@@ -96,6 +100,8 @@
     <div class="toggles">
       <button id="mic" class="mic">🎙 Speak</button>
       <label><input type="checkbox" id="tts" checked /> voice replies</label>
+      <button id="replay" title="Hear the last reply again">🔊 Replay</button>
+      <span id="voicehint" class="dimtxt" style="font-size:12px"></span>
       <label><input type="checkbox" id="dot" /> Echo Dot (voice-only) mode</label>
       <button id="jump" title="Advance the demo clock 7 days">⏭ One week later</button>
       <button id="reset" title="Re-seed the demo">↺ Reset</button>
@@ -123,22 +129,40 @@
 
 <script>
 const $ = (id) => document.getElementById(id);
-const session = "sim-" + Math.random().toString(36).slice(2, 8);
+// Temporary conversational context lives in the server session; it survives a
+// reload of this tab (sessionStorage) and expires with the tab. Durable memory
+// never depends on it.
+const session = sessionStorage.getItem("align-session") || ("sim-" + Math.random().toString(36).slice(2, 8));
+sessionStorage.setItem("align-session", session);
 const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 // ---------- device screen renderers (the "hydrated" views an Alexa device would draw)
 const color = (s) => (s === null ? "#39424f" : s >= 70 ? "var(--good)" : s >= 40 ? "var(--warn)" : "var(--bad)");
 const arrow = { up: "▲", down: "▼", flat: "–" };
 
+let prevScores = {};
 function balanceCard(balance) {
   const rows = balance.map((b) => `
-    <div class="row">
+    <div class="row${prevScores[b.domain] !== undefined && prevScores[b.domain] !== b.score ? " changed" : ""}">
       <span class="dom">${esc(b.domain)}</span>
       <span class="bar"><i style="width:${b.score ?? 4}%; background:${color(b.score)}"></i></span>
       <span class="val">${b.score === null ? "—" : b.score}</span>
       <span class="trend" style="color:${b.trend === "up" ? "var(--good)" : b.trend === "down" ? "var(--bad)" : "var(--dim)"}">${arrow[b.trend] ?? "–"}</span>
     </div>`).join("");
-  return `<div class="card"><h3>Life balance <span class="dimtxt">this week</span></h3>${rows}</div>`;
+  balance.forEach((b) => { prevScores[b.domain] = b.score; });
+  return `<div class="card" id="balance"><h3>Life balance <span class="dimtxt">this week · live</span></h3>${rows}</div>`;
+}
+// Refresh the widget after every turn: check-ins ("I skipped gym Friday"),
+// completions and applied plans change the scores the engine computes.
+async function refreshBalance() {
+  try {
+    const d = await fetch("/balance").then((x) => x.json());
+    const card = document.createElement("div");
+    card.innerHTML = balanceCard(d.balance || []);
+    const existing = $("balance");
+    if (existing) existing.replaceWith(card.firstElementChild);
+    else $("content").prepend(card.firstElementChild);
+  } catch { /* server unreachable: keep the last widget */ }
 }
 function insightsCard(insights, question) {
   const items = insights.map((i) => `
@@ -203,7 +227,10 @@ function render(toolCalls, proactiveData) {
     else if (name === "review_memory") html.push(memoryCard(d));
     else if (name === "simulate_change") html.push(simCard(d));
   }
-  if (html.length) $("content").innerHTML = html.join("");
+  if (html.length) {
+    const keep = html.some((h) => h.includes('id="balance"')) ? "" : ($("balance")?.outerHTML ?? "");
+    $("content").innerHTML = keep + html.join("");
+  }
 }
 
 // ---------- conversation
@@ -225,12 +252,22 @@ function pickVoice() {
     (/google us english/i.test(v.name) ? 3 : 0) +  // Chrome online voice
     (/aria|jenny|guy|zira|mark/i.test(v.name) ? 1 : 0);
   alignVoice = vs.slice().sort((a, b) => score(b) - score(a))[0] || null;
-  if (alignVoice && score(alignVoice) < 0) alignVoice = null;
+  // No English voice: leave the browser's default (original behaviour) and say so.
+  const noEnglish = !!alignVoice && score(alignVoice) < 0;
+  if (noEnglish) alignVoice = null;
+  const hint = $("voicehint");
+  if (hint) hint.textContent = vs.length === 0 ? "no speech voices available in this browser" : noEnglish ? "no English voice installed — using the browser default voice" : "";
 }
 if (window.speechSynthesis) { pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
 
-function speak(text, who) {
+// Align speaks as soon as a reply arrives. Some browsers refuse speech before
+// the first click; in that case the text is queued behind the pulsing 🔊
+// button and played on the first interaction. 🔊 also replays the last reply.
+let lastSpoken = null;
+let pendingSpeech = null;
+function speak(text, who, force = false) {
   $("caption").innerHTML = `<span class="who">${who}</span>${esc(text)}`;
+  lastSpoken = text;
   if (!$("tts").checked || !window.speechSynthesis) return;
   speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text);
@@ -238,9 +275,24 @@ function speak(text, who) {
   if (alignVoice) u.voice = alignVoice;
   u.rate = 1.04;
   $("ring").classList.add("on");
-  u.onend = () => $("ring").classList.remove("on");
+  // On-screen speech status, so a silent machine can be diagnosed without DevTools.
+  const status = (msg) => { $("voicehint").textContent = msg; };
+  if (speechSynthesis.getVoices().length === 0) status("no voices loaded in this browser yet — press 🔊 Replay again in a second");
+  u.onstart = () => status(`speaking with ${u.voice ? u.voice.name.replace(/^Microsoft |^Google /, "") : "the browser default voice"}`);
+  u.onend = () => { $("ring").classList.remove("on"); status(""); pickVoice(); };
+  // Speak right away. Only if the browser refuses (no click yet) is the text
+  // queued behind the pulsing 🔊 button, to be played on the first click.
+  u.onerror = (e) => {
+    $("ring").classList.remove("on");
+    status(`speech error: ${e.error}`);
+    if (e.error === "not-allowed" && !force) { pendingSpeech = text; $("replay").classList.add("pulse"); status("click 🔊 Replay to hear it (the browser blocks speech before the first click)"); }
+  };
   speechSynthesis.speak(u);
 }
+window.addEventListener("pointerdown", () => {
+  if (pendingSpeech) { const t = pendingSpeech; pendingSpeech = null; $("replay").classList.remove("pulse"); setTimeout(() => speak(t, "Align", true), 50); }
+}, { capture: true });
+$("replay").onclick = () => { if (lastSpoken) { pendingSpeech = null; $("replay").classList.remove("pulse"); speak(lastSpoken, "Align", true); } };
 async function send(text) {
   if (!text.trim()) return;
   addMsg("user", text);
@@ -251,6 +303,7 @@ async function send(text) {
     const out = await r.json();
     addMsg("alexa", out.reply, out.toolCalls);
     render(out.toolCalls);
+    refreshBalance();
     speak(out.reply, "Align");
   } catch (e) { addMsg("alexa", "Connection problem: " + e.message); }
   $("listen").classList.remove("on");
@@ -263,9 +316,10 @@ async function proactive() {
     const r = await fetch("/proactive?session_id=" + session).then((x) => x.json());
     const h = await fetch("/healthz").then((x) => x.json());
     $("brain").textContent = "brain: " + (h.brain || "rules") + " · demo day: " + (h.today || "");
-    if (r.quiet) { $("content").innerHTML = '<div class="card dimtxt">Nothing needs your attention right now — Align stays quiet.</div>'; return; }
+    if (r.quiet) { $("content").innerHTML = '<div class="card dimtxt">Nothing needs your attention right now — Align stays quiet.</div>'; refreshBalance(); return; }
     addMsg("alexa", "🔔 PROACTIVE (simulated host channel): " + r.text);
     render([], r.data);
+    refreshBalance();
     speak(r.text, "Align");
   } catch (e) { $("content").innerHTML = '<div class="card dimtxt">Server unreachable: ' + esc(e.message) + "</div>"; }
 }

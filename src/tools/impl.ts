@@ -15,6 +15,7 @@ import { proposePlan } from "../engine/solver.js";
 import { recordCompletions, recordRejection, type Change, type CompletionReport } from "../engine/learn.js";
 import { addDays, fromMs, overlaps, toMs, weekdayOf } from "../engine/time.js";
 import { runDetectors } from "../engine/detectors.js";
+import { parsePreference, relatePreferences } from "../engine/preferences.js";
 
 const WD = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const when = (iso: string) => `${WD[weekdayOf(iso)]} ${iso.slice(11, 16)}`;
@@ -235,6 +236,8 @@ export function getInsight(db: DatabaseSync, insightId: string): ToolResult {
  */
 export function parseCompletionAnswer(content: string, scheduled: number): { done: number; missed: number } | null {
   const c = content.toLowerCase();
+  // A hedge is not evidence: "I think I went once or twice, not sure" stays unknown.
+  if (/\b(not sure|i think|maybe|i guess|don'?t (really )?know|dunno|or twice|or so|probably|possibly|can'?t remember)\b/.test(c)) return null;
   const num = c.match(/\b(\d+)\s*(?:of\s*\d+|times?|sessions?)?\b/);
   const words: Record<string, number> = { none: 0, zero: 0, once: 1, one: 1, twice: 2, two: 2, three: 3, four: 4, five: 5, all: scheduled, every: scheduled };
   let done: number | null = null;
@@ -265,8 +268,18 @@ export function checkIn(
   }
   if (args.question_id) {
     const decision = questionDecision(db, args.question_id);
+    // An answer to "did X happen?" is completion evidence for exactly those events —
+    // and an answer that can't be read keeps the question OPEN instead of closing it.
+    if (decision?.decisionRef?.startsWith("outcome:")) {
+      const scheduled = Number(decision.evidence.scheduled ?? 1);
+      if (!parseCompletionAnswer(args.content, scheduled)) {
+        return {
+          text: "I couldn't tell from that whether it happened — a yes, a no, or how many times is enough.",
+          data: { memory_id: null, pacing: null, engine_refreshed: false, clarification_needed: true },
+        };
+      }
+    }
     memoryId = recordAnswer(db, personId, args.question_id, args.content, now).memoryId;
-    // An answer to "did X happen?" is completion evidence for exactly those events.
     if (decision?.decisionRef?.startsWith("outcome:")) {
       const goalId = decision.decisionRef.slice("outcome:".length);
       const scheduled = Number(decision.evidence.scheduled ?? 1);
@@ -277,8 +290,6 @@ export function checkIn(
         if (parsed.missed > 0) reports.push({ goal_id: goalId, status: "missed", count: parsed.missed });
         marked.push(...recordCompletions(db, today, reports, now, personId));
         completionNote = parsed.done === scheduled ? "Great — I've recorded that as done." : parsed.done === 0 ? "Understood — I've recorded it as missed. That's not a judgment; it tells me what to plan around." : `Got it — ${parsed.done} done, ${parsed.missed} missed. I've recorded that.`;
-      } else {
-        completionNote = "I couldn't tell from that whether it happened — say yes, no, or how many times.";
       }
     }
   } else {
@@ -327,10 +338,30 @@ const normalizeMemory = (s: string) => s.toLowerCase().replace(/^\s*(actually|al
 
 export function remember(db: DatabaseSync, today: string, content: string, kind: string, personId = "alex"): ToolResult {
   const now = nowAt(today);
-  // Saying it twice must not store it twice — dedupe against active memories of the same kind.
-  const existing = (
-    db.prepare("SELECT id, content FROM memory_items WHERE person_id=? AND kind=? AND status='active'").all(personId, kind) as Array<{ id: string; content: string }>
-  ).find((m) => normalizeMemory(m.content) === normalizeMemory(content));
+  // Saying it twice must not store it twice — dedupe against active memories of
+  // the same kind: by text, and for preferences by MEANING (subject × time × polarity),
+  // so a paraphrase ("I hate morning workouts" / "no gym in the mornings") is one memory.
+  const actives = db.prepare("SELECT id, content FROM memory_items WHERE person_id=? AND kind=? AND status='active'").all(personId, kind) as Array<{ id: string; content: string }>;
+  const parsed = kind === "preference" ? parsePreference(content) : null;
+  // A change of mind supersedes earlier conflicting preferences FIRST — even if a
+  // broader statement with the same meaning already exists ("mornings are best"
+  // + "I hate morning gym" + "mornings work better now" → the gym exception is retired).
+  let superseded: { id: string; content: string } | null = null;
+  if (parsed) {
+    for (const o of actives) {
+      const q = parsePreference(o.content);
+      if (q && relatePreferences(parsed, q) === "supersedes") {
+        db.prepare("UPDATE memory_items SET status='corrected', updated_at=? WHERE id=?").run(now, o.id);
+        superseded = o;
+      }
+    }
+  }
+  // A statement that superseded something is always stored (audit trail: what
+  // replaced what); only a plain repeat is deduplicated.
+  const existing = superseded
+    ? undefined
+    : (actives.find((m) => normalizeMemory(m.content) === normalizeMemory(content)) ??
+      (parsed ? actives.find((m) => { const q = parsePreference(m.content); return !!q && relatePreferences(parsed, q) === "duplicate"; }) : undefined));
   if (existing) {
     return {
       text: kind === "preference" ? "Already noted — I'm planning around it." : kind === "goal_note" ? "Already kept — it's on my list." : `I already remember that ${kind}.`,
@@ -338,23 +369,18 @@ export function remember(db: DatabaseSync, today: string, content: string, kind:
     };
   }
   const id = newId("mem");
-  // A new preference that contradicts an older one about the same thing
-  // supersedes it: the old note is marked corrected (kept for audit), not deleted.
-  let superseded: { id: string; content: string } | null = null;
-  if (kind === "preference") {
-    const c = normalizeMemory(content);
-    const NEG = /\b(hate|dislike|don t like|avoid|not a fan|no more|can t stand)\b/;
-    const tod = /morning/.test(c) ? "morning" : /evening|night/.test(c) ? "evening" : null;
-    const subject = c.match(/\b(gym|workout|spanish|date night|run|read|call mom)\b/)?.[1] ?? null;
-    if (tod && subject) {
-      const olds = db.prepare("SELECT id, content FROM memory_items WHERE person_id=? AND kind='preference' AND status='active'").all(personId) as Array<{ id: string; content: string }>;
-      for (const o of olds) {
-        const oc = normalizeMemory(o.content);
-        if (!oc.includes(subject) || !oc.includes(tod)) continue;
-        if (NEG.test(oc) !== NEG.test(c)) {
-          db.prepare("UPDATE memory_items SET status='corrected', updated_at=? WHERE id=?").run(now, o.id);
-          superseded = o;
-        }
+  // Facts: "X, not Y" corrects the earlier fact that said Y (kept as 'corrected' for audit).
+  if (kind === "fact") {
+    // "My wife's name is Sam, not Samantha" / "it's Wednesdays, not Tuesdays": the
+    // rejected term identifies the fact being corrected.
+    const wrong = content.match(/,?\s*\bnot\s+([A-Za-z][\w']+)\b/)?.[1]?.toLowerCase();
+    const keyTerms = content.toLowerCase().match(/\b(wife|husband|partner|son|daughter|mom|dad|name|football|school|work|birthday)\b/g) ?? [];
+    for (const o of actives) {
+      const oc = o.content.toLowerCase();
+      const sharesTopic = keyTerms.some((k) => oc.includes(k));
+      if ((wrong && oc.includes(wrong) && sharesTopic) || (/\b(actually|i meant|correction)\b/i.test(content) && sharesTopic && wrong === undefined && keyTerms.length >= 2)) {
+        db.prepare("UPDATE memory_items SET status='corrected', updated_at=? WHERE id=?").run(now, o.id);
+        superseded = o;
       }
     }
   }
@@ -425,6 +451,16 @@ export function forget(db: DatabaseSync, memoryId: string): ToolResult {
 
 // ---------------------------------------------------------------- goals
 export function setGoal(db: DatabaseSync, today: string, args: { title: string; domain: string; cadence_per_week: number }, personId = "alex"): ToolResult {
+  // Same goal again = an UPDATE of its target, never a duplicate goal.
+  const existing = db.prepare("SELECT id, cadence_per_week FROM goals WHERE person_id=? AND status='active' AND lower(title)=lower(?)").get(personId, args.title) as { id: string; cadence_per_week: number } | undefined;
+  if (existing) {
+    db.prepare("UPDATE goals SET cadence_per_week=?, domain=? WHERE id=?").run(args.cadence_per_week, args.domain, existing.id);
+    runEngine(db, today);
+    return {
+      text: existing.cadence_per_week === args.cadence_per_week ? `${args.title} is already ${args.cadence_per_week}× per week.` : `Updated: ${args.title} is now ${args.cadence_per_week}× per week, was ${existing.cadence_per_week}.`,
+      data: { goal_id: existing.id, title: args.title, domain: args.domain, cadence_per_week: args.cadence_per_week, updated: true, previous_cadence: existing.cadence_per_week },
+    };
+  }
   const id = newId("goal");
   db.prepare(
     "INSERT INTO goals (id, person_id, domain, title, cadence_per_week, status, created_at) VALUES (?, ?, ?, ?, ?, 'active', ?)",

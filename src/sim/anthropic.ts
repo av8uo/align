@@ -32,6 +32,8 @@ export function toAnthropicTools(tools: McpToolDef[]): Anthropic.Tool[] {
 export interface AnthropicBrainOptions {
   /** Injectable transport (tests); defaults to a real Anthropic client. */
   create?: (params: Anthropic.MessageCreateParamsNonStreaming) => Promise<Anthropic.Message>;
+  /** Per-turn context block from Align's records (src/sim/context.ts). */
+  context?: (state: SessionState, text: string) => string;
   log?: (s: string) => void;
 }
 
@@ -65,6 +67,9 @@ export function makeAnthropicBrain(listTools: () => Promise<McpToolDef[]>, opts:
       { role: "user", content: `${context}\n\nUser says: ${text}` },
     ];
 
+    // Context is built ONCE per turn: the system prompt must stay byte-identical
+    // across the tool rounds of a turn (thinking blocks are bound to it).
+    const contextBlock = opts.context?.(state, text);
     const toolCalls: ToolCallRecord[] = [];
     let inTok = 0;
     let outTok = 0;
@@ -74,7 +79,10 @@ export function makeAnthropicBrain(listTools: () => Promise<McpToolDef[]>, opts:
         res = await create({
           model,
           max_tokens: 2048,
-          system: SYSTEM,
+          // Static prompt first (cacheable prefix), the per-turn context after it.
+          system: contextBlock !== undefined
+            ? [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }, { type: "text", text: contextBlock }]
+            : SYSTEM,
           tools: await tools(),
           messages,
           // A voice assistant turn is short and latency-sensitive: low effort.

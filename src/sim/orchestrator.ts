@@ -47,6 +47,8 @@ export const newSession = (): SessionState => ({
 
 export type CallTool = (name: string, args: Record<string, unknown>) => Promise<ToolCallRecord>;
 
+import { classifyIntent } from "./intent.js";
+
 /** Track conversation anchors (stable IDs) from tool results, whatever brain ran. */
 export function absorb(state: SessionState, call: ToolCallRecord): void {
   const d = call.data ?? {};
@@ -62,7 +64,8 @@ export function absorb(state: SessionState, call: ToolCallRecord): void {
     state.planAwaitingApproval = true;
   }
   if (call.name === "apply_plan" && !call.isError) state.planAwaitingApproval = false;
-  if (call.name === "check_in") state.lastQuestionId = null;
+  // A check-in closes the open question — unless the tool asked for clarification (ambiguous completion answer).
+  if (call.name === "check_in" && !call.data?.clarification_needed) { state.lastQuestionId = null; state.lastQuestionText = null; }
   // "I'd look for a different slot — want me to find one?" must be honorable.
   if (call.name === "simulate_change" && d.recommendation === "reschedule") {
     const a = call.args as { title?: string; day?: string; start_time?: string };
@@ -87,58 +90,14 @@ async function findSlot(offer: NonNullable<SessionState["pendingOffer"]>, calls:
 }
 
 // ---------------------------------------------------------------- rules brain
-const YES = /^(yes|yeah|yep|do it|apply|go ahead|confirm|sure|ok(ay)?)\b/i;
-const NO = /^(no|nope|not now|don'?t|no thanks|leave it|skip( it)?|later|maybe later)\b/i;
-const SMALLTALK = /^(hi|hello|hey|yo|hiya|thanks?( you)?( a lot)?|thank you|cheers|ok(ay)?|cool|great|nice|never ?mind|forget it|bye|good ?night|see you|yes|yeah|yep|no|nope|not now)[!. ]*$/i;
-const ANSWERED = "Thank you for telling me — I've noted it, and it changes how sure I am about what's going on. Say \"fix it\" when you want a plan.";
-/** The tool's own words win when the answer carried completion evidence or a verdict; otherwise the standard acknowledgement. */
-const answered = (call: ToolCallRecord): string =>
-  (call.data?.completions_recorded as string[] | undefined)?.length || /couldn't tell from that/.test(call.text) ? call.text : ANSWERED;
+// Deterministic fallback. Every turn is classified into ONE intent (src/sim/intent.ts)
+// and each intent has its own action and its own kind of reply — never "check_in
+// for everything" and never the same line for unrelated inputs. It reflects the
+// user's words, uses stored knowledge, and asks at most one focused question.
+// Its limits are real: no language understanding beyond these patterns.
 const CAPABILITIES = 'I can brief you on your week, explain an insight, fix your schedule with your approval, or test a "what if". What would you like?';
-
-interface Route {
-  match: RegExp;
-  run: (m: RegExpMatchArray, state: SessionState) => { name: string; args: Record<string, unknown> } | null;
-}
-
-const ROUTES: Route[] = [
-  // What-if simulation: "what (happens) if I take a client dinner on Thursday at 7pm"
-  {
-    match:
-      /what (?:happens |would happen )?if i (?:take|accept|add|schedule|move|put|book|do|have|go to) (?:an? |the |my )?(.+?)(?: on| to)? (monday|tuesday|wednesday|thursday|friday|saturday|sunday)(?: at (\d{1,2})(?::(\d{2}))?\s*(pm|am)?)?\??$/i,
-    run: (m) => {
-      let h = m[3] ? Number(m[3]) : 19;
-      const ap = m[5]?.toLowerCase();
-      if (ap === "pm" && h < 12) h += 12;
-      if (ap === "am" && h === 12) h = 0;
-      return {
-        name: "simulate_change",
-        args: { title: m[1]!, day: m[2]!, start_time: `${String(h).padStart(2, "0")}:${m[4] ?? "00"}` },
-      };
-    },
-  },
-  // Self-reported savings progress ("I put in 450") -> logged against the house fund.
-  { match: /(?:put in|put|saved|deposited|transferred|added)\s*\$?(\d+)/i, run: (m) => ({ name: "check_in", args: { content: m.input ?? m[0]!, goal_id: "goal_house", amount: Number(m[1]) } }) },
-  // Routes are anchored or phrase-level on purpose: a free-text answer to
-  // Align's question ("I don't know why, we barely talk") must not trip a route.
-  { match: /\b(my )?goals?\b|\bstreaks?\b|goal progress|how am i doing on/i, run: () => ({ name: "get_goal_progress", args: {} }) },
-  { match: /briefing|good morning|catch me up|how('s| is) my (week|day)|how am i doing( this week| today)?\??$|^what('s| is) (up|new)/i, run: () => ({ name: "get_daily_briefing", args: {} }) },
-  { match: /\b(life |my )balance\b|how('s| is) my life|am i balanced|how am i (doing )?overall|^overall\??$/i, run: () => ({ name: "get_life_balance", args: {} }) },
-  { match: /did it work|how did (my|the) week go|what('s| has) changed|\bresults\b/i, run: () => ({ name: "whats_changed", args: {} }) },
-  { match: /remember (that )?(.+)/i, run: (m) => ({ name: "remember", args: { content: m[2]!, kind: "fact" } }) },
-  // Spoken likes/dislikes become durable preferences the planner honors next time.
-  {
-    match: /\b(i )?(hate|love|prefer|would rather|don'?t like|dislike|not a fan of)\b.*\b(morning|evening|night|gym|spanish|date night)\b/i,
-    run: (m) => ({ name: "remember", args: { content: m.input ?? m[0]!, kind: "preference" } }),
-  },
-  { match: /forget ([a-z]+_[a-z0-9]+)/i, run: (m) => ({ name: "forget", args: { memory_id: m[1]! } }) },
-  { match: /what do you know about me|show (your |my )?memor/i, run: () => ({ name: "review_memory", args: {} }) },
-  { match: /^(tell me more|why|explain|show me the evidence|what('s| is) the evidence)\b/i, run: (_m, s) => (s.lastInsightId ? { name: "get_insight", args: { insight_id: s.lastInsightId } } : null) },
-  {
-    match: /\b(fix (it|this|that|my (week|schedule))|make (me )?a plan|plan (it|my week)|suggest (something|changes|a plan)|help me change|sort (it|this) out)\b/i,
-    run: (_m, s) => (s.lastInsightId ? { name: "propose_plan", args: { insight_id: s.lastInsightId } } : null),
-  },
-];
+const clean = (t: string) => t.trim().replace(/[.!?]+$/, "");
+const lower1 = (t: string) => (t ? t[0]!.toLowerCase() + t.slice(1) : t);
 
 /** What makes a briefing "the same one": its headline, insights, balances and measured outcomes — not its wording. */
 export function briefingKey(data: Record<string, unknown> | undefined): string {
@@ -162,169 +121,190 @@ function briefingRecap(call: ToolCallRecord): string {
   return `Nothing new since my last briefing${parts.length ? ` — ${parts.join("; ")}` : ""}. Say "fix it" for a plan, or "tell me more" for the evidence.`;
 }
 
+/** Has Align already offered a plan this session? (Offer once; after that, wait to be asked.) */
+const offeredPlan = (state: SessionState) => state.history.some((h) => h.role === "assistant" && /\b(fix it|a plan)\b/i.test(h.text));
+
 async function rulesBrain(text: string, state: SessionState, callTool: CallTool): Promise<OrchestratorReply> {
   const calls: ToolCallRecord[] = [];
   const say = (reply: string): OrchestratorReply => ({ reply, toolCalls: calls, brain: "rules" });
+  const run = async (name: string, args: Record<string, unknown>) => {
+    const call = await callTool(name, args);
+    calls.push(call);
+    absorb(state, call);
+    return call;
+  };
+  const planHint = () => (offeredPlan(state) ? "" : ' Say "fix it" when you want a plan.');
+  const { intent, payload } = classifyIntent(text, state);
 
-  if (state.planAwaitingApproval && YES.test(text.trim()) && state.lastPlanId) {
-    const call = await callTool("apply_plan", { plan_id: state.lastPlanId, approve: true });
-    calls.push(call);
-    absorb(state, call);
-    return say(call.text);
-  }
-  // Accept or decline a pending offer before anything else reads the "yes".
-  if (state.pendingOffer && !state.planAwaitingApproval && (YES.test(text.trim()) || /^(find one|please do|go on)\b/i.test(text.trim()))) {
-    const offer = state.pendingOffer;
-    state.pendingOffer = null;
-    return say(await findSlot(offer, calls, callTool));
-  }
-  if (state.pendingOffer && !state.planAwaitingApproval && NO.test(text.trim())) {
-    state.pendingOffer = null;
-    return say("Okay, leaving it.");
-  }
-  // Declining a proposed plan is a decision, not a memory: nothing is applied.
-  if (state.planAwaitingApproval && NO.test(text.trim())) {
-    state.planAwaitingApproval = false;
-    // The decline is evidence for the planner (acceptance estimate), applied nothing.
-    if (state.lastPlanId) {
-      const call = await callTool("apply_plan", { plan_id: state.lastPlanId, approve: false, reject: true });
-      calls.push(call);
+  switch (intent) {
+    case "approve_plan": {
+      const call = await run("apply_plan", { plan_id: state.lastPlanId, approve: true });
+      return say(call.text);
     }
-    return say('Okay — I\'ll leave your week as it is. Say "fix it" whenever you want the plan again.');
-  }
-  // Completion evidence stated outright ("we did date night", "I skipped gym twice").
-  const completion = text.match(/\b(went to|did|had|made it to|skipped|missed|cancel+ed)\b(?: the| my| our)?\s+(gym|date night|spanish|call mom|workout)\b(?:.*\b(once|twice|\d+ times|three times))?/i);
-  if (completion && !state.lastQuestionId) {
-    const status = /skip|miss|cancel/i.test(completion[1]!) ? "missed" : "done";
-    const c = completion[3]?.toLowerCase();
-    const count = c === "twice" ? 2 : c === "three times" ? 3 : c?.match(/^(\d+)/) ? Number(c.match(/^(\d+)/)![1]) : 1;
-    const call = await callTool("check_in", { content: text, completions: [{ title: completion[2]!, status, count }] });
-    calls.push(call);
-    absorb(state, call);
-    return say(call.text);
-  }
-  // Small talk and bare yes/no with nothing pending: conversation, never a memory,
-  // and never mistaken for the answer to Align's open question.
-  if (SMALLTALK.test(text.trim())) {
-    // A bare yes/no while Align's question is open IS the answer — record it.
-    if (state.lastQuestionId && (YES.test(text.trim()) || NO.test(text.trim()))) {
-      const call = await callTool("check_in", { content: text, question_id: state.lastQuestionId });
-      calls.push(call);
-      absorb(state, call);
-      return say(answered(call));
+    case "reject_plan": {
+      state.planAwaitingApproval = false;
+      if (state.lastPlanId) await run("apply_plan", { plan_id: state.lastPlanId, approve: false, reject: true });
+      return say('Okay — I\'ll leave your week as it is. Say "fix it" whenever you want the plan again.');
     }
-    if (/^(thanks?|thank you|cheers)/i.test(text.trim())) return say("Any time.");
-    if (/^(bye|good ?night|see you)/i.test(text.trim())) return say("Good night. I'll keep an eye on the week and speak up only if something matters.");
-    if (/^(never ?mind|forget it)/i.test(text.trim())) return say("Okay, dropped.");
-    if (YES.test(text.trim())) return say('Nothing is waiting on a yes right now. Say "fix it" if you\'d like a plan for the week.');
-    if (NO.test(text.trim())) return say("Okay.");
-    return say(state.lastQuestionText ? `Hi. ${state.lastQuestionText}` : 'Hi. Ask for your briefing, or say "fix it" when you want a plan.');
-  }
-  if (/^(help|what can you do)\b/i.test(text.trim())) return say(CAPABILITIES);
-  // Direct calendar edits aren't a tool: be honest about how Align changes things.
-  const savingsUpdate = /(put in|put|saved|deposited|transferred)\s*\$?\d+|\$?\d+ (in|into|to|toward) the/i.test(text);
-  if (/^(move|reschedule|cancel|shift|put|book|schedule)\b/i.test(text.trim()) && !/^what if/i.test(text) && !savingsUpdate) {
-    return say('I don\'t edit your calendar on command — I propose a plan and apply it only after your yes. Say "fix it" and I\'ll include that, or ask "what if…" to see the cost first.');
-  }
-  // Forget by description: look the memory up, then delete that one item.
-  const forgetByText = text.match(/^forget (?:that |the |about )?(.+?)(?: thing| memory| one)?[.!?]*$/i);
-  if (forgetByText && !/^[a-z]+_[a-z0-9]+$/i.test(forgetByText[1]!)) {
-    const found = await callTool("review_memory", { filter: forgetByText[1]! });
-    calls.push(found);
-    const matches = (found.data?.memories as Array<{ id: string; content: string }> | undefined) ?? [];
-    const quote = (c: string) => `"${c.replace(/[.!]+$/, "")}"`;
-    if (matches.length === 0) return say("I don't hold a memory about that.");
-    // Deleting is irreversible: only act when the description is unambiguous.
-    if (matches.length > 1) {
-      return say(`I have ${matches.length} memories mentioning that: ${matches.slice(0, 3).map((m) => quote(m.content)).join("; ")}. Say "forget" with the exact words of the one to delete.`);
+    case "accept_offer": {
+      const offer = state.pendingOffer!;
+      state.pendingOffer = null;
+      return say(await findSlot(offer, calls, callTool));
     }
-    const call = await callTool("forget", { memory_id: matches[0]!.id });
-    calls.push(call);
-    absorb(state, call);
-    return say(`Forgotten: ${quote(matches[0]!.content)}.`);
-  }
-  // A wish or goal ("I want to…", "I'd like to…") is durable intent, not an
-  // answer to the open question and not a passing check-in: keep it, and
-  // point at the one thing Align can actually do about it.
-  if (/^(i (really |just )?(want|need|wish|would like|would love)|i'?d (like|love)|my goal is)\b/i.test(text.trim())) {
-    const call = await callTool("remember", { content: text, kind: "goal_note" });
-    calls.push(call);
-    absorb(state, call);
-    if (call.isError) return say(`I couldn't keep that: ${call.text}`);
-    return say("That's a goal worth planning around — I've kept it. Say \"fix it\" and I'll look for protected time for it this week; nothing changes without your yes.");
-  }
-  // While Align's question is open, a sentence-length statement is the answer —
-  // even if it happens to contain a route word ("…the kids' goals and my plan").
-  // Short, command-shaped turns ("fix it", "why?") still route normally.
-  const wordCount = text.trim().split(/\s+/).length;
-  const commandShaped = /^(what|how|why|tell|show|fix|give|can|could|did|do|is|are|remember|forget|help)\b/i.test(text.trim());
-  if (state.lastQuestionId && wordCount >= 6 && !commandShaped) {
-    const call = await callTool("check_in", { content: text, question_id: state.lastQuestionId });
-    calls.push(call);
-    absorb(state, call);
-    return say(answered(call));
-  }
-  for (const route of ROUTES) {
-    const m = text.match(route.match);
-    if (!m) continue;
-    let target = route.run(m, state);
-    if (!target && !state.lastInsightId) {
-      // No conversation anchor yet ("fix it" as the first words): fetch the
-      // briefing to anchor on the top insight, then retry the route.
-      const briefing = await callTool("get_daily_briefing", {});
-      calls.push(briefing);
-      absorb(state, briefing);
-      target = route.run(m, state);
+    case "decline_offer":
+      state.pendingOffer = null;
+      return say("Okay, leaving it.");
+    case "greeting":
+      return say(state.lastQuestionText ? `Hi. ${state.lastQuestionText}` : 'Hi. Ask for your briefing, or say "fix it" when you want a plan.');
+    case "thanks":
+      return say("Any time.");
+    case "goodbye":
+      return say("Good night. I'll keep an eye on the week and speak up only if something matters.");
+    case "nevermind":
+      return say("Okay, dropped.");
+    case "stray_yes":
+      return say("Nothing is waiting on a yes right now. Say \"fix it\" if you'd like a plan for the week.");
+    case "stray_no":
+      return say("Okay.");
+    case "help":
+      return say(CAPABILITIES);
+    case "meta_complaint": {
+      // The user is right that repetition is on us: drop the open question for this session, keep the gap for later.
+      const q = state.lastQuestionText;
+      state.lastQuestionId = null;
+      state.lastQuestionText = null;
+      return say(q ? "You're right — I already asked that. Dropping it; I'll only come back to it if it changes what I'd plan." : "Fair — I'll stop repeating myself.");
     }
-    if (!target) continue;
-    const call = await callTool(target.name, target.args);
-    calls.push(call);
-    absorb(state, call);
-    // Same briefing as the one already delivered this session: recap, don't re-read it.
-    if (call.name === "get_daily_briefing" && !call.isError) {
-      const key = briefingKey(call.data);
-      if (key === state.lastBriefingKey) return say(briefingRecap(call));
-      state.lastBriefingKey = key;
+    case "know_query": {
+      const call = await run("review_memory", {});
+      return say(call.text);
     }
-    return say(call.text);
+    case "want_question": {
+      const briefing = await run("get_daily_briefing", {});
+      const q = (briefing.data?.question as { text?: string } | null)?.text;
+      if (q) return say(`One thing I'd like to know: ${q}`);
+      if (state.lastQuestionText) return say(`Earlier I asked: ${state.lastQuestionText} Whenever you're ready.`);
+      if (state.lastQuestionId) return say("I've already asked my one question for today — answer it whenever you like.");
+      return say("Nothing right now. I ask at most one question a day, and only when it would change what I do for you.");
+    }
+    case "agent_question":
+      if (payload.listen) return say("I'm listening — go ahead.");
+      if (payload.who) return say(`I'm Align — I keep a model of your whole life and speak up when something matters. ${CAPABILITIES}`);
+      return say(CAPABILITIES);
+    case "support": {
+      // Acknowledge what was actually said; no tool, no intervention unless asked.
+      const clause = lower1(clean(String(payload.clause)));
+      const open = state.lastQuestionText ? ` When you're ready: ${state.lastQuestionText}` : "";
+      return say(`That's a lot — ${clause}. I'm listening, and I won't turn this into a plan unless you ask.${open}`);
+    }
+    case "whatif": {
+      const call = await run("simulate_change", { title: payload.title, day: payload.day, start_time: payload.start_time });
+      return say(call.text);
+    }
+    case "savings_progress": {
+      const call = await run("check_in", { content: text, goal_id: "goal_house", amount: payload.amount });
+      return say(call.text);
+    }
+    case "forget_text": {
+      const found = await run("review_memory", { filter: payload.filter });
+      const matches = (found.data?.memories as Array<{ id: string; content: string }> | undefined) ?? [];
+      const quote = (c: string) => `"${c.replace(/[.!]+$/, "")}"`;
+      if (matches.length === 0) return say("I don't hold a memory about that.");
+      if (matches.length > 1) return say(`I have ${matches.length} memories mentioning that: ${matches.slice(0, 3).map((m) => quote(m.content)).join("; ")}. Say "forget" with the exact words of the one to delete.`);
+      await run("forget", { memory_id: matches[0]!.id });
+      return say(`Forgotten: ${quote(matches[0]!.content)}.`);
+    }
+    case "completion": {
+      const call = await run("check_in", { content: text, completions: [{ title: payload.title, status: payload.status, count: payload.count, ...(payload.day ? { day: payload.day } : {}) }] });
+      return say(call.text);
+    }
+    case "preference": {
+      const call = await run("remember", { content: text, kind: "preference" });
+      if (call.isError) return say(`I couldn't keep that: ${call.text}`);
+      const d = call.data ?? {};
+      if (d.duplicate) return say("I already have that — it's shaping every plan.");
+      if (d.supersedes_id) return say(`${call.text} The next plan will follow the new one.`);
+      const p = payload.parsed as { subject: { kind: string; keyword?: string; domain?: string } | null; polarity: string; time: string };
+      const what = p.subject ? (p.subject.keyword ?? p.subject.domain) : "your sessions";
+      const when = p.polarity === "like" ? p.time : p.time === "morning" ? "evening" : "morning";
+      return say(`Noted — ${what} go in the ${when} from now on.${state.planAwaitingApproval ? ' Say "fix it" and I\'ll redo the pending plan around it.' : ""}`);
+    }
+    case "goal_update": {
+      const goals = await run("get_goal_progress", {});
+      const list = (goals.data?.goals as Array<{ goal_id: string; title: string; domain: string }> | undefined) ?? [];
+      const subj = String(payload.subject ?? "").toLowerCase().replace(/^(the |my )/, "");
+      const goal = list.find((g) => g.title.toLowerCase().includes(subj) || subj.includes(g.title.toLowerCase().split(" ")[0]!));
+      if (!goal) return say(`I don't have a goal matching "${payload.subject}". Say "set a goal: <name>, <n> times a week" and I'll track it.`);
+      const call = await run("set_goal", { title: goal.title, domain: goal.domain, cadence_per_week: payload.cadence });
+      state.planAwaitingApproval = false; // any pending plan was built on the old target
+      return say(`${call.text}${state.lastPlanId ? " The plan I proposed was built on the old target, so I've set it aside — say \"fix it\" for a new one." : ""}`);
+    }
+    case "correction":
+    case "fact": {
+      const call = await run("remember", { content: text, kind: "fact" });
+      if (call.isError) return say(`I couldn't keep that: ${call.text}`);
+      const d = call.data ?? {};
+      if (d.duplicate) return say("I have that already.");
+      if (d.supersedes_id) return say(`Corrected — ${lower1(clean(text))}. I've replaced what I had.`);
+      return say(`Noted — ${lower1(clean(text))}.`);
+    }
+    case "goal_note": {
+      const call = await run("remember", { content: text, kind: "goal_note" });
+      if (call.isError) return say(`I couldn't keep that: ${call.text}`);
+      if (call.data?.duplicate) return say("That's already on my list.");
+      return say(`That's a goal worth planning around — I've kept it.${planHint()}`);
+    }
+    case "direct_edit":
+      return say('I don\'t edit your calendar on command — I propose a plan and apply it only after your yes. Say "fix it" and I\'ll include that, or ask "what if…" to see the cost first.');
+    case "advice": {
+      // Advice is grounded in the current insight, never improvised.
+      if (!state.lastInsightId) await run("get_daily_briefing", {});
+      if (!state.lastInsightId) return say("I don't see anything in your data that needs changing right now, so I'd hold course.");
+      const ins = await run("get_insight", { insight_id: state.lastInsightId });
+      return say(`${ins.text.replace(/ Say "fix it" and I'll propose a plan\.$/, "")} If you want, I'll turn that into concrete changes — say "fix it".`);
+    }
+    case "route": {
+      const tool = String(payload.tool);
+      const m = payload.match as RegExpMatchArray;
+      if (tool === "remember") { const call = await run("remember", { content: m[2], kind: "fact" }); return say(call.data?.duplicate ? "I have that already." : `Noted — ${lower1(clean(String(m[2])))}.`); }
+      if (tool === "forget") { const call = await run("forget", { memory_id: m[1] }); return say(call.text); }
+      if (tool === "get_insight" || tool === "propose_plan") {
+        if (!state.lastInsightId) await run("get_daily_briefing", {}); // anchor on the top insight first
+        if (!state.lastInsightId) return say(tool === "propose_plan" ? "I don't see anything that needs fixing right now." : "I have nothing to explain yet — ask for your briefing first.");
+        const call = await run(tool, tool === "get_insight" ? { insight_id: state.lastInsightId } : { insight_id: state.lastInsightId });
+        return say(call.text);
+      }
+      const call = await run(tool, {});
+      if (tool === "get_daily_briefing" && !call.isError) {
+        const key = briefingKey(call.data);
+        if (key === state.lastBriefingKey) return say(briefingRecap(call));
+        state.lastBriefingKey = key;
+      }
+      return say(call.text);
+    }
+    case "ambiguous_answer": {
+      // Don't close the question on a hedge; ask the one thing that resolves it — and
+      // don't repeat the same sentence if the user hedged twice.
+      const last = state.history.filter((h) => h.role === "assistant").at(-1)?.text ?? "";
+      if (!state.lastQuestionText) return say("I'm not sure what you mean — could you say it another way?");
+      if (/A yes, a no, or a number is enough\.$/.test(last)) return say("I'll leave it unrecorded rather than guess. If you remember later, just tell me.");
+      return say(`No rush. ${state.lastQuestionText} A yes, a no, or a number is enough.`);
+    }
+    case "question_answer": {
+      const call = await run("check_in", { content: text, question_id: state.lastQuestionId });
+      if ((call.data?.completions_recorded as string[] | undefined)?.length || call.data?.clarification_needed) return say(call.text);
+      return say(`Thanks for telling me — ${lower1(clean(text))}. That changes how sure I am about what's going on.${planHint()}`);
+    }
+    case "statement": {
+      const call = await run("check_in", { content: text });
+      return say(`Noted — ${lower1(clean(text))}.${planHint()}`);
+    }
+    case "off_topic_question":
+      return say("That's outside what I know — I only hold your calendar, your goals and what you've told me. Ask me about your week, or say \"fix it\" for a plan.");
+    case "unclear":
+    default:
+      return say("I'm not sure what you'd like — your briefing, a plan, or to tell me something?");
   }
-  // "What do you want to know?" -> Align's one open question, never a memory.
-  if (/what (do|would) you (want|like) to know|ask me (something|anything)|(any|got) questions? for me/i.test(text)) {
-    const briefing = await callTool("get_daily_briefing", {});
-    calls.push(briefing);
-    absorb(state, briefing);
-    const q = (briefing.data?.question as { text?: string } | null)?.text;
-    if (q) return say(`One thing I'd like to know: ${q}`);
-    if (state.lastQuestionText) return say(`Earlier I asked: ${state.lastQuestionText} Whenever you're ready.`);
-    if (state.lastQuestionId) return say("I've already asked my one question for today — answer it whenever you like.");
-    return say("Nothing right now. I ask at most one question a day, and only when it would change what I do for you.");
-  }
-  // Questions aimed at Align ("can you listen?", "who are you?") are
-  // conversation, not life facts — and not the answer to an open question.
-  // Answer them without filing a memory.
-  if (/\b(can|could|do|are|will|would) you (listen|hear)/i.test(text)) return say("I'm listening — go ahead.");
-  if (/\b(who|what) are you\b/i.test(text)) return say(`I'm Align — I keep a model of your whole life and speak up when something matters. ${CAPABILITIES}`);
-  if (/^(hey|hi|hello|ok|okay|so)?[,\s]*(can|could|do|are|will|would|what|who|how|why|where|when) you\b/i.test(text)) return say(CAPABILITIES);
-  // Feelings are signal (recorded) — but deserve a human reply, not a receipt.
-  if (/\b(i'?m|i am|i feel|feeling) (so |really |completely |totally )?(exhausted|tired|drained|burnt out|burned out|stressed|overwhelmed|anxious|sad|miserable|depressed)\b/i.test(text)) {
-    const call = await callTool("check_in", state.lastQuestionId ? { content: text, question_id: state.lastQuestionId } : { content: text });
-    calls.push(call);
-    absorb(state, call);
-    return say('I\'m sorry it\'s been that heavy. I\'ve noted it. If you want, say "fix it" and I\'ll look for room in the week — nothing changes without your yes.');
-  }
-  // Not a command: if Align asked something, this is the answer -> memory.
-  if (state.lastQuestionId) {
-    const call = await callTool("check_in", { content: text, question_id: state.lastQuestionId });
-    calls.push(call);
-    absorb(state, call);
-    return say(answered(call));
-  }
-  // Any other question with no open question of Align's to answer: conversation, not a memory.
-  if (/\?\s*$/.test(text)) return say(CAPABILITIES);
-  const call = await callTool("check_in", { content: text });
-  calls.push(call);
-  absorb(state, call);
-  return say(call.text);
 }
 
 // ---------------------------------------------------------------- entry point

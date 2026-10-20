@@ -13,6 +13,7 @@ import type { EventRow, GoalRow } from "../core/types.js";
 import { newId } from "../core/ids.js";
 import { goalActual, keywordOf } from "./detectors.js";
 import { acceptance, effectiveness, changeKind, type Change, type Estimate } from "./learn.js";
+import { preferredTimeFor } from "./preferences.js";
 import { addDays, at, overlaps, toMs } from "./time.js";
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -28,30 +29,16 @@ interface SlotTemplate {
 }
 
 /**
- * Learned time-of-day preference for a goal, mined from preference memories.
- * "I hate morning gym" / "I'd rather run in the evening" -> evening slots.
- * This is how a spoken correction visibly changes the NEXT plan.
+ * Learned time-of-day preference for a goal, from structured preferences
+ * (src/engine/preferences.ts): "I hate morning workouts" and "mornings work
+ * better now" are understood, not keyword-matched. This is how a spoken
+ * correction visibly changes the NEXT plan.
  */
 export function timePreferenceFor(
   goal: GoalRow,
-  memories: Array<{ kind: string; content: string; status: string }>,
+  memories: Array<{ kind: string; content: string; status: string; created_at?: string }>,
 ): "morning" | "evening" | null {
-  const kw = keywordOf(goal.title);
-  for (const m of memories) {
-    if (m.kind !== "preference" || m.status !== "active") continue;
-    const c = m.content.toLowerCase();
-    if (!c.includes(kw) && !c.includes(goal.domain)) continue;
-    const negative = /(hate|don'?t like|dislike|no more|not a fan|avoid|can'?t do)/.test(c);
-    const mentionsMorning = /morning/.test(c);
-    const mentionsEvening = /(evening|night)/.test(c);
-    if (negative && mentionsMorning) return "evening";
-    if (negative && mentionsEvening) return "morning";
-    if (!negative && /(prefer|love|like|rather|better)/.test(c)) {
-      if (mentionsEvening) return "evening";
-      if (mentionsMorning) return "morning";
-    }
-  }
-  return null;
+  return preferredTimeFor(goal, memories);
 }
 
 /** Candidate slot families for a goal: the stated/learned preference first, the alternative second. */
@@ -145,10 +132,11 @@ export function proposePlan(db: DatabaseSync, insightId: string, today: string):
   const evidence = JSON.parse(insight.evidence) as { collisions?: Array<[string, string]> };
   const events = db.prepare("SELECT * FROM events").all() as unknown as EventRow[];
   const goals = db.prepare("SELECT * FROM goals WHERE status='active'").all() as unknown as GoalRow[];
-  const memories = db.prepare("SELECT kind, content, status FROM memory_items").all() as Array<{
+  const memories = db.prepare("SELECT kind, content, status, created_at FROM memory_items").all() as Array<{
     kind: string;
     content: string;
     status: string;
+    created_at: string;
   }>;
   const weekEnd = addDays(today, 7);
   const weekEvents = events.filter((e) => e.start >= `${today}T00:00:00` && e.start < `${weekEnd}T00:00:00`);
