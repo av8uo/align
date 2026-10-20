@@ -50,9 +50,13 @@ export function getDailyBriefing(db: DatabaseSync, today: string): ToolResult {
     .all() as Array<{ id: string; title: string; severity: number; domains: string; confidence: number }>;
   for (const i of insights) db.prepare("UPDATE insights SET status='surfaced' WHERE id=?").run(i.id);
 
-  const q = db
-    .prepare("SELECT id, text FROM questions WHERE status='pending' ORDER BY evi_score DESC LIMIT 1")
-    .get() as { id: string; text: string } | undefined;
+  // At most ONE question per day, across all briefings (never interrogate).
+  const askedToday = (db.prepare("SELECT COUNT(*) AS n FROM questions WHERE asked_at LIKE ?").get(`${today}%`) as { n: number }).n;
+  const q = askedToday > 0
+    ? undefined
+    : (db
+        .prepare("SELECT id, text FROM questions WHERE status='pending' ORDER BY evi_score DESC LIMIT 1")
+        .get() as { id: string; text: string } | undefined);
   if (q) markAsked(db, q.id, nowAt(today));
 
   // Measured results from recently completed follow-up windows: close the loop out loud.
@@ -85,23 +89,32 @@ export function getDailyBriefing(db: DatabaseSync, today: string): ToolResult {
     if (weeks >= 1) streaks.push({ goal: keywordOf(g.title), weeks, revived: weeks === 1 && missedBefore });
   }
   const best = streaks.sort((a, b) => b.weeks - a.weeks)[0];
+  const revived = streaks.find((s) => s.revived);
   if (best && best.weeks >= 2) streakLine = `${best.weeks} weeks in a row on your ${best.goal} goal — keep it going.`;
-  else {
-    const revived = streaks.find((s) => s.revived);
-    if (revived) streakLine = `And ${revived.goal} is back on track after missing a week.`;
+  else if (revived) streakLine = `${revived.goal[0]!.toUpperCase()}${revived.goal.slice(1)} is back on track after missing a week.`;
+
+  // A second insight is spoken only if it doesn't clash with the celebration
+  // ("back on track" + "zero scheduled" merge into one coherent sentence).
+  let alsoTitle = insights[1]?.title ?? "";
+  if (revived && /^Upcoming: zero/.test(alsoTitle) && alsoTitle.toLowerCase().includes(revived.goal)) {
+    streakLine = `${revived.goal[0]!.toUpperCase()}${revived.goal.slice(1)} is back on track after missing a week — though nothing's scheduled for it yet this week.`;
+    alsoTitle = insights[2]?.title ?? "";
   }
 
-  const worst = balance
-    .filter((b) => b.score !== null)
+  // Speak low balances only when something is actually low.
+  const low = balance
+    .filter((b) => b.score !== null && b.score! < 70)
     .sort((a, b) => a.score! - b.score!)
     .slice(0, 2)
     .map((b) => `${b.domain} at ${b.score}`);
+  const balanceLine = low.length ? `Lowest balance: ${low.join(", ")}.` : "Your balance looks strong across the board.";
+
   const headline = insights[0]?.title ?? "All domains look on track";
   const text = [
     resultsLine,
     `Here's your briefing. ${insights[0] ? hedge(insights[0].confidence, headline) : headline}.`,
-    worst.length ? `Lowest balance: ${worst.join(", ")}.` : "",
-    insights[1] ? `Also: ${insights[1].title}.` : "",
+    balanceLine,
+    alsoTitle ? `Also: ${alsoTitle}.` : "",
     streakLine,
     q ? q.text : "",
   ]
@@ -248,8 +261,12 @@ export function reviewMemory(db: DatabaseSync, filter?: string): ToolResult {
       id: string; kind: string; content: string; created_at: string;
     }>
   ).filter((m) => !filter || m.content.toLowerCase().includes(filter.toLowerCase()) || m.kind === filter);
+  const recent = rows.slice(0, 3).map((m) => m.content.replace(/\.+$/, ""));
   return {
-    text: `I hold ${rows.length} active memories${filter ? ` matching "${filter}"` : ""}. You can say "forget" plus the item to delete any of them.`,
+    text:
+      rows.length === 0
+        ? "I don't hold any memories matching that."
+        : `I hold ${rows.length} ${filter ? "matching " : ""}memories about you. Most recent: ${recent.join("; ")}. Say "forget" plus any item to delete it.`,
     data: { memories: rows },
   };
 }
@@ -291,8 +308,14 @@ export function getGoalProgress(db: DatabaseSync, today: string, args: { goal_id
     return { goal_id: g.id, title: g.title, domain: g.domain, actual, target: g.cadence_per_week, unit: "last week", streak_weeks: streak };
   });
 
-  const text = rows.map((r) => `${keywordOf(r.title)}: ${r.actual} of ${r.target} (${r.unit})`).join("; ");
-  return { text: text || "No matching goals.", data: { goals: rows } };
+  if (rows.length === 0) return { text: "No matching goals.", data: { goals: [] } };
+  const line = (r: (typeof rows)[number]) => `${keywordOf(r.title)} ${r.actual} of ${r.target}`;
+  const behind = rows.filter((r) => r.actual < r.target);
+  const text =
+    behind.length === 0
+      ? `You hit everything: ${rows.map(line).join(", ")}. Strong week.`
+      : `Behind on ${behind.map(line).join(" and ")}; on track with ${rows.filter((r) => r.actual >= r.target).map(line).join(", ") || "nothing else yet"}.`;
+  return { text, data: { goals: rows } };
 }
 
 // ---------------------------------------------------------------- plans

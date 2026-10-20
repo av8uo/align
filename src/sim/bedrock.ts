@@ -38,7 +38,9 @@ export function toBedrockTools(tools: McpToolDef[]): Tool[] {
   return tools.map((t) => ({
     toolSpec: {
       name: t.name,
-      description: t.description ?? t.name,
+      // First sentence only — keeps each request's token footprint small so a
+      // day-one Bedrock quota stretches across many more conversation turns.
+      description: (t.description ?? t.name).split(/(?<=\.)\s+/)[0]!.slice(0, 180),
       inputSchema: { json: t.inputSchema as never },
     },
   }));
