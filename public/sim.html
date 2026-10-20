@@ -163,7 +163,7 @@ function balanceCard(balance) {
       <span class="val" data-score="${b.score === null ? "" : b.score}">${b.score === null ? "—" : b.score}</span>
       <span class="trend" style="color:${trendColor(b.trend)}">${arrow[b.trend] ?? "–"}</span>
     </div>`).join("");
-  return `<div class="card" id="balance"><h3>Life balance <span class="dimtxt">this week · live</span></h3>${rows}</div>`;
+  return `<div class="card" id="balance"><h3>Life balance <span class="dimtxt">this week · live</span><span class="dimtxt" id="balance-pulse" style="float:right"></span></h3>${rows}</div>`;
 }
 // Numbers count up or down one by one (12, 13, 14…) while the bar slides.
 function countTo(el, from, to) {
@@ -190,6 +190,19 @@ function applyBalance(balance) {
     holder.innerHTML = balanceCard(balance);
     $("content").prepend(holder.firstElementChild);
     return;
+  }
+  let changed = false;
+  for (const b of balance) {
+    const row0 = card.querySelector(`.row[data-domain="${b.domain}"]`);
+    const prev0 = row0?.querySelector(".val")?.dataset.score ?? "";
+    if ((b.score === null ? "" : String(b.score)) !== prev0) changed = true;
+  }
+  // The widget's heartbeat: honest about whether anything actually moved.
+  const pulse = $("balance-pulse");
+  if (pulse) {
+    const t = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    pulse.textContent = changed ? `updated ${t}` : `checked ${t} · no change`;
+    pulse.style.color = changed ? "var(--good)" : "var(--dim)";
   }
   for (const b of balance) {
     const row = card.querySelector(`.row[data-domain="${b.domain}"]`);
