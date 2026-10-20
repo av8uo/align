@@ -379,7 +379,11 @@ export function createLifeOsHttpServer(db: DatabaseSync, today: string) {
     const path = url.pathname;
 
     if (req.method === "OPTIONS") return res.writeHead(204).end();
-    if (path === "/healthz") return json(res, 200, { status: "ok", today: currentToday, brain: bedrockBrain ? "bedrock" : "rules" });
+    if (path === "/healthz") {
+      // When the Bedrock circuit is open, replies come from the rules brain
+      // even though the Bedrock brain is configured — surfaced here honestly.
+      return json(res, 200, { status: "ok", today: currentToday, brain: bedrockBrain ? "bedrock" : "rules", bedrock: bedrockBrain?.status() ?? null });
+    }
     if (path === "/stats") return json(res, 200, latencyReport());
 
     // Demo time controls (simulator only — not part of the MCP surface).

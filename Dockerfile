@@ -1,4 +1,4 @@
-# LifeOS — single-container deploy (works on App Runner, Railway, Render, Fly)
+# Align — single-container deploy (ECS Express Mode / Fargate; also Railway, Render, Fly)
 FROM node:24-slim
 
 WORKDIR /app

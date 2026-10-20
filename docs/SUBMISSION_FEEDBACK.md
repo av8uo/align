@@ -26,11 +26,11 @@ Everything below happened for real while building Align during the hackathon win
 - **Onboarding:** rough for a genuinely new account; would be fine on a mature one.
 - **Again?** Yes — the runtime API is good; the first-day funnel needs love.
 
-### AWS App Runner + ECR + IAM
-- **Used for:** the public demo deployment — one idempotent script ([scripts/deploy-aws.ts](../scripts/deploy-aws.ts)) builds, pushes to ECR, provisions two least-privilege roles, creates the service, waits for healthy.
-- **Worked well:** App Runner's model (container in, HTTPS URL out, instance roles for credentials) is the right shape for hackathon-to-production; ECR push with scoped, repo-pinned permissions works.
-- **Needs work:** `SubscriptionRequiredException: The AWS Access Key Id needs a subscription for the service` during account activation reads like a **paywall**, not a wait state (friction log F4); the minimal IAM action set for `docker push` is not documented in one place (F5).
-- **Again?** Yes.
+### AWS App Runner → ECS Express Mode + ECR + IAM
+- **Used for:** the public demo deployment — one idempotent script ([scripts/deploy-aws.ts](../scripts/deploy-aws.ts)) builds, pushes to ECR, provisions three least-privilege roles, creates the service, waits for healthy, and only prints a URL once `/healthz` answers over HTTPS.
+- **Worked well:** the "container in, HTTPS URL out, task role for credentials" shape is right for hackathon-to-production, and ECS Express Mode delivers it in a single `CreateExpressGatewayService` call (ALB, certificate, security groups, log group, autoscaling all managed). ECR push with scoped, repo-pinned permissions works.
+- **Needs work:** App Runner is **closed to new accounts**, but its error — `SubscriptionRequiredException: The AWS Access Key Id needs a subscription for the service` — reads like a **paywall**, not "this service is not available to you; use ECS Express Mode" (friction log F4). The caller-side IAM action set for Express Mode is only documented in a GitHub Action README, not in the ECS guide (F5).
+- **Again?** Yes — ECS Express Mode specifically.
 
 ### Node.js `node:sqlite`
 - **Used for:** the entire life-state model — 12 tables, synchronous reads keeping tool latency in single-digit milliseconds.
@@ -68,6 +68,7 @@ Everything below happened for real while building Align during the hackathon win
 - **Severity:** High during a time-boxed hackathon.
 - **Workaround:** our architecture's deterministic fallback brain kept the demo fully functional — but that was our doing, not the platform's.
 - **Suggestion:** include quota name + reset timestamp in the error; surface day-one limits prominently in the Bedrock getting-started page.
+- **Follow-up (day 3):** a 15-token probe against Sonnet 4.5 *and* Haiku 4.5 returns the same `ThrottlingException` (HTTP 429), so this is account-level. The Service Quotas reference lists **no adjustable "tokens per day" quota for Claude Sonnet 4.5** — only per-minute ones (e.g. *Cross-region model inference tokens per minute for Anthropic Claude Sonnet 4.5 V1*, default 5,000,000) — so a self-service increase request cannot address a per-*day* throttle; only a Support case can. The error gives a beginner no way to discover that. We also made the client side responsible: one throttle now opens a circuit breaker until the next UTC day, so no further requests are burned on a quota that is known to be exhausted.
 
 ### F4 — Account activation masquerading as a paywall (AWS)
 - **Task:** create the App Runner service, ~2–10 hours after account signup.
@@ -75,8 +76,8 @@ Everything below happened for real while building Align during the hackathon win
 - **Expected:** an error saying "your account is still being activated," and some console surface showing activation status.
 - **Actual:** wording that implies a missing *paid subscription* (our non-expert founder asked, verbatim, *"should I pay maybe something?"*); billing console shows no banner, no status, nothing actionable.
 - **Severity:** High — it nearly caused an unnecessary payment and cost a night of uncertainty.
-- **Workaround:** a 20-minute retry loop and patience.
-- **Suggestion:** distinct error for activation-pending; an activation-status indicator in the console; per-service activation ETAs.
+- **Workaround:** a 20-minute retry loop and patience — which could never have worked: App Runner is no longer open to new customers (AWS now recommends ECS Express Mode). We ported the deploy script to `CreateExpressGatewayService` on day 3.
+- **Suggestion:** the error should say *"App Runner is not available to this account; see ECS Express Mode"*, and the console should show it.
 
 ### F5 — The undocumented minimal IAM set for `docker push` (ECR)
 - **Task:** push an image with a least-privilege policy.

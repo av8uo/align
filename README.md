@@ -131,15 +131,37 @@ The host is a stand-in for Alexa+ (deployment there is private-preview gated); t
 
 ## Run it
 
+Requirements: **Node.js ≥ 24** (uses the built-in `node:sqlite`), any OS. No AWS account, no API keys, no internet needed for the full demo.
+
 ```bash
 npm install
-npm test        # 42 tests across 6 suites — engine, MCP wire, proactive, resilience
+npm test        # 50 tests across 7 suites — engine, MCP wire, proactive quiet rule, Bedrock circuit breaker
 npm start       # http://localhost:3344/sim  (simulator) · /mcp (MCP endpoint) · /healthz · /stats
 ```
 
 Demo flow in the simulator: the proactive briefing opens by itself → answer its question → **Fix it** → **Yes, do it** (watch per-change verification) → **⏭ One week later** → measured results + the adaptive next question → **↺ Reset** to run it again. Toggle **Echo Dot mode** for voice-only parity.
 
-Bedrock brain: set AWS credentials + `LIFEOS_LLM=bedrock` (see [docs/AWS_SETUP.md](docs/AWS_SETUP.md)); without it the deterministic rules brain serves the full demo. `/stats` reports live per-tool latency.
+**Judges / testers — the MCP endpoint directly** (Streamable HTTP, spec 2025-11-25):
+
+```bash
+curl -X POST http://localhost:3344/mcp -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
+curl -X POST http://localhost:3344/mcp -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_daily_briefing","arguments":{}}}'
+```
+
+Or point any MCP client (MCP Inspector, Claude Desktop, etc.) at `http://localhost:3344/mcp`.
+
+Bedrock brain (optional): set AWS credentials + `LIFEOS_LLM=bedrock` (see [docs/AWS_SETUP.md](docs/AWS_SETUP.md)); without it — or whenever Bedrock throttles — the deterministic rules brain serves the identical demo through the same tools. `/stats` reports live per-tool latency.
+
+### Test results (Oct 20, 2026)
+
+```
+Test Files  7 passed (7)
+     Tests  50 passed (50)
+```
+
+Suites: `engine` (detectors, correlator, solver, learning), `schema`, `seed`, `mcp` (wire-level: full two-week demo arc over Streamable HTTP, latency budget asserted), `proactive` (quiet rule), `orchestrator` (Bedrock failure → rules fallback), `bedrock` (circuit breaker with injected transport). Run `npm test` to reproduce.
 
 ## Alexa+ functional requirements coverage
 
@@ -164,15 +186,23 @@ Mapping of [Alexa+ functional requirements](https://developer.amazon.com/docs/al
 | Real & working | Simulated (clearly labeled) | Deferred |
 |---|---|---|
 | MCP server (spec 2025-11-25), portable to any MCP host | The Alexa+ host: voice pipeline + **agent-initiated proactive speech** (no public API for add-on-initiated turns — filed as our #1 feature request) | Real calendar OAuth (`.ics`-style import + seeded data instead) |
-| Engine, memory, verified execution, learning loop — 42 automated tests | Echo Show / Echo Dot device frames | Multi-person households (schema ready) |
-| Bedrock brain (authorization verified live; new-AWS-account day-one token quotas may throttle — fallback keeps the demo alive, by design) | — | Finance *advice* (policy); only user-stated goals with self-reported progress |
-| Hourly background engine runs | — | Real Alexa+ deployment (private preview gated) |
+| Engine, memory, verified execution, learning loop — 50 automated tests | Echo Show / Echo Dot device frames | Multi-person households (schema ready) |
+| Bedrock brain integration: Converse tool-use loop, circuit breaker, fallback — all tested with injected failures | — | **Bedrock as the live voice:** at submission time every call is throttled by a new-account daily token quota (AWS Support case filed); the demo video therefore shows the deterministic rules brain — through the same MCP tools |
+| Hourly background engine runs | — | **Hosted deployment:** the ECS Express Mode deploy script is complete and preflight-tested, but **not provisioned** — a deliberate no-cost decision; the project runs locally in two commands |
+| — | — | Finance *advice* (policy); only user-stated goals with self-reported progress · Real Alexa+ deployment (private preview gated) |
+
+### Known limitations
+- Calendar and life data are seeded demo data (an `.ics`-style import), not a live calendar OAuth.
+- The proactive channel, voice pipeline and device frames are a simulation of Alexa+ — there is no public API today for an add-on to initiate a turn.
+- The Bedrock brain has not yet produced a live spoken turn in this account because of the day-one quota; its behavior is covered by unit tests with an injected transport, not by a recorded live run.
+- Single user, single household; English only.
 
 ## AWS (Builder mini challenge)
 
 - **Amazon Bedrock** — Claude runs the agentic orchestration loop (Converse API with tool-use) in the Alexa+ host role.
-- **App Runner + ECR** — containerized public deployment ([Dockerfile](Dockerfile), [scripts/deploy-aws.ts](scripts/deploy-aws.ts)): one idempotent command builds, pushes, provisions roles, deploys, waits for healthy.
-- **Least-privilege IAM throughout** — no AdministratorAccess anywhere: the deploy key is pinned to one ECR repo, two named roles (with PassRole service conditions and an attach-policy pin), and the lifeos App Runner service; the cloud container holds **no keys** — an instance role scoped to `bedrock:InvokeModel` on the specific model ARNs.
+- **ECS Express Mode (Fargate + ALB + HTTPS) + ECR** — containerized deployment ([Dockerfile](Dockerfile), [scripts/deploy-aws.ts](scripts/deploy-aws.ts)): one idempotent command builds, pushes, provisions roles, creates the service, waits for healthy, and only reports a URL once `/healthz` answers over HTTPS; `--check` is a read-only preflight with a cost estimate. (App Runner was the first target; it is closed to new AWS accounts — `SubscriptionRequiredException` — so the script was ported.) **Status: image pushed to ECR; service deliberately not provisioned** (≈ $45/month for a demo nobody needs hosted — the project runs locally).
+- **Least-privilege IAM throughout** — no AdministratorAccess anywhere: the deploy key is pinned to one ECR repo, three named roles (with PassRole service conditions and an attach-policy pin to the two AWS-managed ECS policies), and read-only VPC preflight; the cloud container holds **no keys** — a task role scoped to `bedrock:InvokeModel`.
+- **Quota discipline** — a circuit breaker in the Bedrock brain ([src/sim/bedrock.ts](src/sim/bedrock.ts)): one throttled call opens it until the quota window resets, every turn meanwhile is answered by the deterministic rules brain through the same MCP tools, and `/healthz` reports the breaker state honestly.
 
 ## License
 
