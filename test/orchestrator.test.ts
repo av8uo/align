@@ -250,3 +250,33 @@ describe("rules brain: review fixes", () => {
     expect(out.reply).not.toMatch(/sorry/i);
   });
 });
+
+describe("rules brain: a briefing is never read twice verbatim", () => {
+  const briefing = async (name: string, args: Record<string, unknown>): Promise<ToolCallRecord> => ({
+    name, args, isError: false,
+    text: "Here's your briefing. Work is crowding out your family time. Lowest balance: family at 6.",
+    data: { headline: "Work is crowding out your family time", balance: [{ domain: "work", score: 68 }, { domain: "family", score: 6 }, { domain: "personal", score: 11 }, { domain: "finance", score: null }], insights: [{ id: "ins_1" }], question: null },
+  });
+
+  it("recaps from the briefing's own data when the briefing hasn't changed", async () => {
+    const s = newSession();
+    const first = await orchestrate("How's my week looking?", s, { callTool: briefing });
+    const second = await orchestrate("How's my week looking?", s, { callTool: briefing });
+    expect(first.reply).toMatch(/^Here's your briefing/);
+    expect(second.reply).toBe('Nothing new since my last briefing — Work is crowding out your family time; lowest balances family at 6 and personal at 11. Say "fix it" for a plan, or "tell me more" for the evidence.');
+  });
+
+  it("treats the proactive briefing as already delivered", async () => {
+    const s = newSession();
+    s.lastBriefingText = "Here's your briefing. Work is crowding out your family time. Lowest balance: family at 6.";
+    const out = await orchestrate("How's my week looking?", s, { callTool: briefing });
+    expect(out.reply).toMatch(/^Nothing new since my last briefing/);
+  });
+
+  it("reads a changed briefing in full (e.g. after the week-later jump)", async () => {
+    const s = newSession();
+    s.lastBriefingText = "an older briefing";
+    const out = await orchestrate("How's my week looking?", s, { callTool: briefing });
+    expect(out.reply).toMatch(/^Here's your briefing/);
+  });
+});

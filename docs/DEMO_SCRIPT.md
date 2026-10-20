@@ -60,12 +60,12 @@
 
 ## Beat 5 — Under the hood, honestly — 2:30–2:50
 **Visual, fast cuts (pre-record separately, 4–5 s each):**
-1. Terminal: `npm test` → **73 tests, 8 suites, all green** (engine, MCP wire, proactive quiet rule, Bedrock circuit breaker).
+1. Terminal: `npm test` → **76 tests, 8 suites, all green** (engine, MCP wire, proactive quiet rule, Bedrock circuit breaker).
 2. Terminal: `curl -X POST localhost:3344/mcp … tools/list` → the 13 tools in JSON — *the real Streamable HTTP endpoint*. (If you also show the server inside another MCP client, show only its tool list in a terminal/inspector — no third-party logos.)
 3. README: the functional-requirements coverage table and the **real / simulated / deferred** honesty table.
 4. `src/engine/` file tree + the objective-function block.
 **VO:**
-> *"A real MCP server — a deterministic engine decides, a language model only speaks. Claude on Amazon Bedrock is wired in as the orchestrator and tested with injected failures; today it's throttled by a new-account quota, so what you heard was the deterministic fallback through the same tools — by design, the demo never depends on the cloud. Seventy-three automated tests. Tools answer in under five milliseconds."*
+> *"A real MCP server — a deterministic engine decides, a language model only speaks. Claude on Amazon Bedrock is wired in as the orchestrator and tested with injected failures; today it's throttled by a new-account quota, so what you heard was the deterministic fallback through the same tools — by design, the demo never depends on the cloud. Seventy-six automated tests. Tools answer in under five milliseconds."*
 **Caption:** `Implemented: MCP server, engine, learning loop · Simulated: Alexa+ host · Deferred: Bedrock voice (quota), hosted deploy (cost)`
 
 ## Close — 2:50–3:00

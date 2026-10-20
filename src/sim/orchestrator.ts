@@ -24,6 +24,8 @@ export interface SessionState {
   lastQuestionId: string | null;
   /** Spoken text of the last question Align asked, so it can be repeated on request. */
   lastQuestionText: string | null;
+  /** The last briefing delivered in this session (proactively or on request) — never read twice verbatim. */
+  lastBriefingText: string | null;
   lastInsightId: string | null;
   lastPlanId: string | null;
   planAwaitingApproval: boolean;
@@ -33,6 +35,7 @@ export interface SessionState {
 export const newSession = (): SessionState => ({
   lastQuestionId: null,
   lastQuestionText: null,
+  lastBriefingText: null,
   lastInsightId: null,
   lastPlanId: null,
   planAwaitingApproval: false,
@@ -109,6 +112,19 @@ const ROUTES: Route[] = [
     run: (_m, s) => (s.lastInsightId ? { name: "propose_plan", args: { insight_id: s.lastInsightId } } : null),
   },
 ];
+
+/** One-sentence recap built only from the briefing's own data. */
+function briefingRecap(call: ToolCallRecord): string {
+  const d = call.data ?? {};
+  const headline = typeof d.headline === "string" ? d.headline : null;
+  const balance = ((d.balance as Array<{ domain: string; score: number | null }> | undefined) ?? [])
+    .filter((b) => typeof b.score === "number")
+    .sort((a, b) => (a.score as number) - (b.score as number))
+    .slice(0, 2)
+    .map((b) => `${b.domain} at ${b.score}`);
+  const parts = [headline, balance.length ? `lowest balances ${balance.join(" and ")}` : null].filter(Boolean);
+  return `Nothing new since my last briefing${parts.length ? ` — ${parts.join("; ")}` : ""}. Say "fix it" for a plan, or "tell me more" for the evidence.`;
+}
 
 async function rulesBrain(text: string, state: SessionState, callTool: CallTool): Promise<OrchestratorReply> {
   const calls: ToolCallRecord[] = [];
@@ -192,6 +208,9 @@ async function rulesBrain(text: string, state: SessionState, callTool: CallTool)
     const call = await callTool(target.name, target.args);
     calls.push(call);
     absorb(state, call);
+    // Same briefing as the one already delivered this session: recap, don't re-read it.
+    if (call.name === "get_daily_briefing" && !call.isError && call.text === state.lastBriefingText) return say(briefingRecap(call));
+    if (call.name === "get_daily_briefing") state.lastBriefingText = call.text;
     return say(call.text);
   }
   // "What do you want to know?" -> Align's one open question, never a memory.

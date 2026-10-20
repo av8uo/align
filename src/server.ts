@@ -414,6 +414,7 @@ export function createLifeOsHttpServer(db: DatabaseSync, today: string) {
         state.lastInsightId = d.insights?.[0]?.id ?? state.lastInsightId;
         state.lastQuestionId = d.question?.id ?? state.lastQuestionId;
         state.lastQuestionText = d.question?.text ?? state.lastQuestionText;
+        state.lastBriefingText = r.text;
         state.history.push({ role: "assistant", text: r.text });
       }
       return json(res, 200, { quiet: r.data.quiet === true, text: r.text, data: r.data });
