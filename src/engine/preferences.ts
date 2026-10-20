@@ -44,8 +44,8 @@ export function parsePreference(content: string): ParsedPreference | null {
   // A GENERAL time preference must be about the time itself ("mornings work better",
   // "evenings don't work for me"). "I hate my morning routine / commute / coffee"
   // is about something else — not a scheduling preference; left as plain text.
-  if (subject === null && !/(mornings|evenings|nights)|(in|during) the (morning|evening|night)s?|(before|after) work|early/.test(c)) return null;
-  if (subject === null && /(morning|evening|night) (routine|commute|traffic|coffee|meetings?|calls?|shift|news)/.test(c)) return null;
+  if (subject === null && !/\b(mornings|evenings|nights)\b|\b(in|during) the (morning|evening|night)s?\b|\b(before|after) work\b|\bearly\b/.test(c)) return null;
+  if (subject === null && /\b(morning|evening|night) (routine|commute|traffic|coffee|meetings?|calls?|shift|news)\b/.test(c)) return null;
   return { subject, time, polarity };
 }
 
