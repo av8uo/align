@@ -24,47 +24,58 @@ A high-intelligence life-improvement agent for Alexa+: it holds a model of your 
 ## About the project (long description)
 
 ### Inspiration
-Every AI we tried — including the newest agents — waits to be asked, answers, and forgets. Meanwhile the hardest problem people have isn't getting answers: it's that **life drifts**. Work quietly eats the evenings; the gym goal dies in week two; "call Mom" slips a month; the strategy document gets rescheduled a fifth time. Nobody notices the pattern, because noticing patterns across your whole life is a full-time job. We built the agent whose full-time job it is.
+Every assistant we use waits for a question, answers it, and forgets. But the hardest problem in a real life isn't getting answers — it's **drift**. Work quietly eats the evenings. The gym goal dies in week two. "Call Mom" slips a month. Date night disappears, and nobody notices, because noticing patterns across a whole life is a full-time job.
+
+Most startups build agents that connect to our apps, our phones, our devices. We wanted the agent that connects to **us** — our health, our family, our private life — and makes it measurably better. That is Align.
 
 ### What it does
-Align maintains a persistent computational model of a person's life — values, goals, relationships, commitments, calendar, memories with confidence scores — and runs a continuous loop over it, **unprompted**:
+Align is a proactive life agent for Alexa+. It keeps a living model of your whole life — values, goals, people, commitments, calendar, and memories with confidence scores — and runs one loop over it, unprompted:
 
-**OBSERVE → MODEL → ANALYZE → INQUIRE → PLAN → EXECUTE → VERIFY → MEASURE → ADAPT**
+**MEET → REMEMBER → NOTICE → ASK → PLAN → ACT (only with your yes) → VERIFY → MEASURE → LEARN**
 
-- **It thinks while no one is talking to it:** an hourly background engine runs 8 deterministic detectors over the past *and the next 7 days* (problems get caught before they happen), correlates findings across domains (work ↔ marriage ↔ health ↔ growth), and prepares a briefing — then speaks **only** if something deserves attention.
-- **It knows what it doesn't know:** knowledge gaps are *discovered* from your data every run — a session nobody confirmed, a goal with no progress logged, a value with no fresh signal, two notes that contradict each other — each scored by how much the answer would change a decision. It asks at most **one** question a day ("How are things with Sam lately?" — Sam comes from a fact you stated), and asks nothing when no answer would change the plan. Your answer becomes evidence that raises or lowers its confidence — which you can *hear*: uncertain insights are verbally hedged until confirmed.
-- **It fixes the week — with consent and proof:** a constraint solver proposes concrete calendar changes (locked meetings never move; slots honor learned preferences like "I hate morning gym"), every plan declares a measurable hypothesis, nothing executes without an explicit yes, and every change is **verified by re-reading the calendar** after writing.
-- **It thinks ahead of you:** "What if I take a client dinner Thursday at 7?" → it simulates the alternate week and answers with the real cost ("collides with Maya's recital") *before* you commit.
-- **It measures honestly and learns from it:** a session on the calendar is *scheduled*, not done. A week later Align says it can't tell what happened and asks; only what you confirm becomes a result (`improved / unchanged / worse / inconclusive` — unknown is never success or failure, and no causal claim is made). Confirmed and missed sessions retrain two estimates with visible sample sizes — P(you accept this kind of change) and P(it actually gets done, per time of day) — that rank every future slot: evening gym that gets done outranks morning gym that gets skipped, with no need to say so.
-- **It remembers the thread and keeps learning about all of you:** it opens by picking up your last conversation ("You told me you hate morning gym, so gym is in the evenings now — how many sessions happened?"), rotates its one question across life areas instead of circling one topic, and its Life Balance moves only on evidence: confirmed sessions count fully, unconfirmed ones half, missed ones not at all — with a faint bar showing what next week becomes if the plan holds.
-- **It meets you with a blank mind:** a brand-new user gets an interview, not guesses — one question per turn, every answer stored live as a fact, a goal or a preference you can review or delete.
+- **It meets you with a blank mind.** A new user gets an interview, not guesses: one question per turn, every answer stored live as a fact, a goal or a preference you can review or delete.
+- **It thinks while you're not talking to it.** An engine runs 8 deterministic detectors over the past *and the next 7 days*, links findings across areas (work ↔ family ↔ health ↔ growth), and speaks first only when something deserves it. A quiet rule keeps it silent otherwise.
+- **It knows what it doesn't know.** Knowledge gaps are discovered from your data and scored by how much the answer would change a decision. It asks at most one question a day, rotates across life areas so it keeps learning about all of you, and hedges out loud until your answer confirms an insight.
+- **It fixes the week — with consent and proof.** One plan across every area: locked meetings never move, learned preferences ("I hate morning gym") are respected, nothing executes without your yes, and every change is verified by re-reading the calendar.
+- **It thinks ahead.** "What if I take a client dinner Thursday at 7?" → it simulates the week and tells you the real cost ("collides with Maya's recital") before you commit.
+- **It measures honestly, then learns.** Scheduled is not done. A week later it picks up the thread — *"You told me you hate morning gym, so gym moved to evenings. How many sessions happened?"* — and only confirmed evidence moves the Life Balance score. Confirmed and missed sessions retrain what it proposes next.
 
-It spans the whole of life, not a slice: marriage & partnership, children, extended family, friends & social life, health, personal growth, career & workload, business strategy & long-term projects, long-term financial goals (pacing on *your* stated numbers — never investment advice), and household operations. Life areas are configuration, not code.
+It covers the whole of life: partnership, children, extended family, friends, health, personal growth, career, long-term projects, financial goals (pacing on your own numbers — never investment advice) and the household.
 
 ### How we built it
-- **Hybrid neuro-symbolic architecture:** a deterministic TypeScript engine makes every decision (detection, correlation, question selection, planning, scoring) — the LLM only converses. This keeps tools under 500 ms (Alexa+'s budget), makes every decision auditable, and honors Alexa+'s policy against thin LLM wrappers.
-- **MCP server:** 13 typed tools (zod input *and* output schemas), stateless Streamable HTTP per spec 2025-11-25, stable-ID chaining for multi-step flows. The identical server runs under our simulated host *and* inside Claude.
-- **Claude** plays the Alexa+ orchestrator role — over **Amazon Bedrock** (Converse API tool-use loop, implemented and tested) or the **Claude API** (live in the demo video): it reads the MCP tool catalog, chains tool calls, and phrases the speech. A deterministic rules brain answers through the same MCP wire if the model is unavailable — tested with injected failures.
-- **The simulated Alexa+ host:** Echo Show frame, TTS/mic, a proactive channel with a strict quiet rule, a demo time-jump, and an Echo Dot voice-only mode. Clearly labeled simulated, because add-on deployment is private-preview gated and no public API exists for agent-initiated speech — which became our #1 feature request.
-- **AWS deployment:** Dockerized, one idempotent script (ECR push + ECS Express Mode: Fargate, ALB, HTTPS, health checks; `--check` = read-only preflight with cost estimate). Least-privilege everywhere: the deploy key is pinned to one repo and three named roles; the cloud container holds **zero keys** (task role scoped to `bedrock:InvokeModel`). The image is in ECR; we chose **not** to provision the service for the submission (≈ $45/month for a demo that runs locally in two commands). A quota circuit breaker means one throttled Bedrock call switches the server to the rules brain until the quota window resets — no wasted requests, no dead demo.
-- **Honest status of the host brain:** the Bedrock path is implemented (Converse tool-use loop over the 13 MCP tools) and tested with an injected transport, but in our new AWS account every live Bedrock call is throttled by the daily token quota, and AWS Support declined the increase: Bedrock access is limited for new accounts until they build billing history (contact sales, or retry in about a month — friction log F11). The demo video is therefore voiced by the same host loop over the Claude API (`LIFEOS_LLM=anthropic`) — the model is interchangeable plumbing; the engine and tools are the product. The deterministic rules brain remains the fallback for any LLM failure.
-- **146 automated tests**, including wire-level MCP tests that run the entire two-week demo arc and assert the latency budget, injected-failure tests for both host brains, and an **intelligence evaluation suite** on fixed fixtures (insight precision, question usefulness, outcome data completeness, ranking changes after evidence, cold start, contradictions, corrections).
+- **Deterministic core, language at the surface.** A TypeScript engine makes every decision — detection, correlation, question selection, planning, scoring, verification. The language model only converses. Tools answer in milliseconds, every decision is auditable, and Align is not a thin LLM wrapper.
+- **A real MCP server:** 13 typed tools (zod input *and* output schemas), stateless Streamable HTTP, spec 2025-11-25.
+- **Claude as the Alexa+ orchestrator:** it reads the tool catalog, chains tool calls and phrases the speech — over **Amazon Bedrock** (Converse tool-use loop, implemented and tested) or the **Claude API** (live in the demo). A deterministic rules brain takes over if the model is unavailable.
+- **A simulated Alexa+ host, clearly labeled:** Echo Show frame, voice in and out, an agent-initiated proactive channel with a quiet rule, a time jump, and an Echo Dot voice-only mode — because add-on deployment is in private preview and no public API exists yet for agents that speak first.
+- **AWS, least privilege:** a Docker image in Amazon ECR and a one-command ECS Express Mode deployment (Fargate, ALB, HTTPS, health checks) with a read-only preflight — not provisioned for the submission, by cost choice. The container holds zero keys.
+- **146 automated tests in 16 suites:** wire-level MCP tests that replay the full demo and assert the latency budget, injected-failure tests for every host brain, and an evaluation suite for the intelligence itself.
 
 ### Challenges we ran into
-1. **No API for proactive agents on Alexa+.** Add-ons can only respond. Our core concept — an agent that speaks first — cannot ship on today's platform, so we built the host channel ourselves, labeled it honestly, and filed the feature request.
-2. **A brand-new AWS account is a gauntlet.** Four distinct Bedrock failures before the first successful Claude call (hidden use-case form, undocumented one-time `aws-marketplace:Subscribe` requirement, opaque day-one token quotas) and an App Runner error that reads like a paywall — our founder literally asked *"should I pay maybe something?"* — which turned out to mean App Runner is closed to new accounts, so we ported the deployment to ECS Express Mode mid-hackathon. All incidents are written up as friction logs with verbatim errors.
-3. **Least-privilege IAM for real.** We refused AdministratorAccess on principle; deriving the exact 7-statement policy (including the easy-to-miss `ecr:BatchGetImage` and the ECS service-linked-role permission) took three iterations — also documented as friction.
+1. **No API for proactive agents on Alexa+.** Add-ons can only answer. Our core idea — an agent that speaks first — can't ship on today's platform, so we built the host channel ourselves, labeled it, and made it our #1 feature request.
+2. **A brand-new AWS account is a gauntlet.** A hidden use-case form, an undocumented one-time Marketplace permission, an opaque "Too many tokens per day" throttle, and an App Runner error that reads like a paywall. Our Bedrock quota request ended with AWS Support saying new accounts stay limited until they build billing history. Every incident is written up as a friction log with verbatim errors — and because the engine never depended on one model, we switched the voice to the Claude API without touching a single decision.
+3. **Honesty under pressure.** The easy path was letting the agent claim a plan "worked". We forced it to say "I can't tell yet" and ask — which is what made the learning loop real.
 
-### Accomplishments we're proud of
-- A **provably learning agent**: the demo shows a spoken correction changing the very next plan, and a measured "hypothesis confirmed" one week later — not claimed, tested.
-- The **quiet rule**: a proactive agent disciplined enough to say nothing.
-- Shipping the whole thing — engine, server, host, deployment, docs — in 4 days, with honesty tables instead of hype.
+### Accomplishments that we're proud of
+- An agent that **provably learns**: a spoken preference changes the very next plan, and a week later only confirmed evidence changes the score.
+- **The quiet rule**: a proactive agent disciplined enough to say nothing.
+- **Honesty built in**: simulated parts labeled, uncertainty spoken aloud, unknown never counted as success.
+- Engine, MCP server, host, deployment, tests and docs — shipped inside the hackathon window.
 
 ### What we learned
-Deterministic cores + LLM surfaces beat prompt-only agents on every axis that matters here: latency, auditability, certification policy, and trust. And: the best product feedback comes from building with least privilege on a day-old account — the paths the docs' authors never walk.
+Deterministic cores with language surfaces beat prompt-only agents wherever trust matters: latency, auditability, certification and honesty. A proactive agent's hardest skill isn't speaking first — it's knowing when to stay quiet, and when to say "I don't know yet." And the best product feedback comes from building with least privilege on a brand-new account: the paths the docs' authors never walk.
 
-### What's next
-Real calendar OAuth; multi-person households on Voice ID (schema is ready); the MCP Apps interactive widget for Echo Show; and — the moment Amazon ships agent-initiated turns — deleting our simulator with great joy.
+### What's next for Align
+Align has one goal: **every part of your life at ten out of ten.** Here is the road there.
+
+1. **Ship on real Alexa+.** Move from our simulated host to a certified Alexa+ add-on the moment agent-initiated turns open to developers — the same MCP server runs unchanged, and we delete our simulator with joy.
+2. **Connect to real life, with consent.** Calendar OAuth so plans land where you actually live, and optional health and sleep signals from wearables you choose to share — so "health" is measured, not guessed.
+3. **Whole households.** Voice ID tells Align who is speaking: one memory, one set of goals and one privacy boundary per person — and plans that coordinate a family: the school run, the date night, the call to the grandparents.
+4. **Show, don't just tell.** An Echo Show widget (MCP Apps) for the Life Balance, the weekly plan, and the evidence behind every insight.
+5. **Privacy as a feature.** Your life model belongs to you: export, delete, per-area sharing, encryption at rest by default.
+6. **Prove the outcome.** A pilot with real families to measure the only question that matters: after eight weeks with Align, do people spend their time closer to what they say they value?
+7. **Grow the engine.** New detectors (sleep debt, social isolation, early burnout signals), plans that learn what each person really does, and an open, auditable engine others can build on.
+
+The future of assistants isn't answering faster. It's an agent that knows your life, cares about all of it, and quietly helps you live it better. **That's Align.**
 
 ## Built with
 `typescript` · `node.js` · `model-context-protocol` · `node:sqlite` · `zod` · `vitest` · `claude` · `amazon-bedrock` · `amazon-ecs` · `aws-fargate` · `amazon-ecr` · `docker` · `web-speech-api`
