@@ -1,10 +1,12 @@
 # Align
 
-**A high-intelligence life-improvement agent for Alexa+** — built on the Model Context Protocol (spec 2025-11-25, Streamable HTTP), with Claude on AWS Bedrock as its conversational brain.
+**A high-intelligence life-improvement agent for Alexa+** — built on the Model Context Protocol (spec 2025-11-25, Streamable HTTP), with Claude as its conversational voice (Claude API in the demo; the Amazon Bedrock path is implemented and tested).
 
 > *Every AI answers questions. Align holds a living model of your whole life — your values, goals, relationships, commitments — analyzes it continuously, and makes it measurably better.*
 
 Built for the **Amazon Developer Hackathon 2026** — Alexa+ track + AWS Builder mini challenge.
+
+▶️ **Demo video (2:49):** https://youtu.be/ow4dWSlrSDw
 
 > ⚠️ **Platform status, up front:** the **MCP server is real** — spec 2025-11-25, Streamable HTTP, runs unchanged under any MCP host (we demo it inside Claude). The **Alexa+ host in our demo is simulated** (voice pipeline, device frames, and agent-initiated proactive speech), because Alexa+ add-on deployment is private-preview gated and no public API exists for add-on-initiated turns — that API is our #1 feature request. Every simulated element is labeled as such, in the demo UI and below.
 

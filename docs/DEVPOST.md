@@ -16,7 +16,7 @@ A high-intelligence life-improvement agent for Alexa+: it holds a model of your 
 
 ## Links
 - **Repository:** https://github.com/av8uo/align (MIT license; ⏳ flip to public at submission, or add reviewers `testing@devpost.com`, `chris-trag`, `knmeiss`, `giolaq`, `anishamalde`, `mosesroth`, `emersonsklar` as collaborators)
-- **Demo video:** ⏳ YouTube URL (public, English, <3:00)
+- **Demo video:** https://youtu.be/ow4dWSlrSDw (public, English, 2:49)
 - **Live demo:** none hosted (deliberate no-cost decision — the ECS Express Mode deploy script is complete and preflight-tested). **Testing instructions:** Node ≥ 24 → `npm install && npm start` → http://localhost:3344/sim; MCP endpoint at `/mcp` (curl examples in the README). No AWS account or keys needed.
 
 ---
