@@ -22,7 +22,7 @@ Everything below happened for real while building Align during the hackathon win
 ### Amazon Bedrock (Claude, Converse API)
 - **Used for:** the agentic orchestration loop — Claude reads the MCP tool catalog, chooses tools, chains calls, and phrases the spoken reply ([src/sim/bedrock.ts](../src/sim/bedrock.ts)).
 - **Worked well:** the Converse tool-use loop is clean (`toolConfig` → `stopReason: "tool_use"` → `toolResult`); mapping MCP tool schemas to Bedrock `toolSpec` was ~10 lines; IAM instance roles mean our cloud container holds zero keys.
-- **What needs work:** the **new-account first-run experience** is a gauntlet — four distinct failures before the first successful call, each with an error that under-explains (full details in the friction log): the retired model-access page vs. the hidden use-case form; the one-time `aws-marketplace:Subscribe` requirement; day-one token quotas with an opaque "Too many tokens per day" error; and multi-hour silent account activation.
+- **What needs work:** the **new-account first-run experience** is a gauntlet — four distinct failures before the first successful call, each with an error that under-explains (full details in the friction log): the retired model-access page vs. the hidden use-case form; the one-time `aws-marketplace:Subscribe` requirement; day-one token quotas with an opaque "Too many tokens per day" error; and multi-hour silent account activation. The quota increase we then requested was declined by AWS Support: Bedrock access is limited on new accounts until they build billing history — contact sales or retry in a month (F11). So Bedrock never voiced a live turn for us; the demo runs the same loop over the Claude API.
 - **Onboarding:** rough for a genuinely new account; would be fine on a mature one.
 - **Again?** Yes — the runtime API is good; the first-day funnel needs love.
 
@@ -133,6 +133,15 @@ Everything below happened for real while building Align during the hackathon win
 - **Workaround:** context computed once per turn; static prompt first (cacheable), dynamic block second.
 - **Suggestion:** mention the invariant where tool loops are documented; the suggested `drop_block` remedy requires a beta header, which is heavier than the one-line fix.
 
+### F11 — The Bedrock quota request ends at "contact sales, or wait a month" (Bedrock / AWS Support)
+- **Task:** get enough Claude capacity on Bedrock to voice a 3-minute demo, on the account created for this hackathon.
+- **Steps:** after F3, filed the only self-service request that exists for Sonnet 4.5 — Service Quotas → *Cross-region model inference tokens per minute for Anthropic Claude Sonnet 4.5 V1* (us-east-1), raise to 5,000,000 → automated "under review" (case 179248773900598, Oct 20) → answer the next morning (Oct 21).
+- **Expected:** either the per-day throttle lifted, or a concrete path a hackathon builder can finish before the deadline.
+- **Actual:** declined: *"Bedrock model access is currently limited for your account"*; as a new account, quotas expand *"as your account establishes a consistent usage and billing history"*. Recommended next steps: fill the **sales** contact form, use other services (EC2, Lambda, RDS) to build billing history, and **resubmit in about a month**. The request we could file was per-*minute*; the wall we hit is per-*day*, and nothing in Service Quotas, the throttle error, or the Bedrock console says that new accounts are capped regardless — that only arrived in a support reply a day later.
+- **Severity:** High — it decided which model voices our submission. A hackathon sponsored by Amazon, whose AWS Builder challenge asks for Bedrock, cannot be completed on Bedrock by a participant who opened their AWS account for it.
+- **Workaround:** the host loop is model-agnostic by design: the same 13 MCP tools, engine and prompt run over the Claude API ([src/sim/anthropic.ts](../src/sim/anthropic.ts)), which voices the demo video; the Bedrock path ([src/sim/bedrock.ts](../src/sim/bedrock.ts)) stays implemented and covered by tests with an injected transport, behind a circuit breaker.
+- **Suggestion:** state the new-account limit where builders look first (the throttle error, the Bedrock getting-started page, the quota page itself); offer a time-boxed hackathon or sponsored-event allowance (an event code granting day-one capacity); never send a solo developer's quota request to a sales form.
+
 ## Part 3 — Feature requests
 
 | # | Request | Why it matters | Urgency |
@@ -143,3 +152,4 @@ Everything below happened for real while building Align during the hackathon win
 | 4 | **AWS account-activation status surface** + distinct activation-pending error | Prevents the "do I need to pay?" moment; see friction F4. | Important |
 | 5 | **Windows support for Alexa+ tooling** | Large developer population; this project proves it's viable. | Important |
 | 6 | One canonical `protocolVersion` across all Alexa+ MCP samples | Removes the most confusing hour of integration. | Nice-to-have |
+| 7 | **Bedrock capacity for hackathon participants** — an event code or time-boxed allowance for new accounts, and the new-account limit stated in the throttle error | Our quota request was declined with "contact sales or wait a month" (F11); the AWS Builder challenge is unreachable on Bedrock for anyone who opens an account for the event. | Important |

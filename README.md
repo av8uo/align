@@ -205,14 +205,14 @@ Mapping of [Alexa+ functional requirements](https://developer.amazon.com/docs/al
 |---|---|---|
 | MCP server (spec 2025-11-25), portable to any MCP host | The Alexa+ host: voice pipeline + **agent-initiated proactive speech** (no public API for add-on-initiated turns — filed as our #1 feature request) | Real calendar OAuth (`.ics`-style import + seeded data instead) |
 | Engine, memory, verified execution, learning loop — 122 automated tests | Echo Show / Echo Dot device frames | Multi-person households (schema ready) |
-| LLM host brain: Claude via the Claude API voices the demo video; the Bedrock integration (Converse tool-use loop, circuit breaker, fallback) is implemented and tested with injected failures | — | **Bedrock as the live voice:** at submission time every Bedrock call is throttled by a new-account daily token quota (AWS Support case filed), so the demo uses the Claude API path — same tools, same engine, different plumbing |
+| LLM host brain: Claude via the Claude API voices the demo video; the Bedrock integration (Converse tool-use loop, circuit breaker, fallback) is implemented and tested with injected failures | — | **Bedrock as the live voice:** every Bedrock call on our new account is throttled by a daily token quota, and AWS Support declined the increase (Oct 21: Bedrock access is limited for new accounts until they build billing history — contact sales or retry in a month; friction log F11). The demo therefore uses the Claude API path — same tools, same engine, different plumbing |
 | Hourly background engine runs | — | **Hosted deployment:** the ECS Express Mode deploy script is complete and preflight-tested, but **not provisioned** — a deliberate no-cost decision; the project runs locally in two commands |
 | — | — | Finance *advice* (policy); only user-stated goals with self-reported progress · Real Alexa+ deployment (private preview gated) |
 
 ### Known limitations
 - Calendar and life data are seeded demo data (an `.ics`-style import), not a live calendar OAuth.
 - The proactive channel, voice pipeline and device frames are a simulation of Alexa+ — there is no public API today for an add-on to initiate a turn.
-- The Bedrock brain has not yet produced a live spoken turn in this account because of the day-one quota; its behavior is covered by unit tests with an injected transport. The demo video is voiced by the Claude-API host instead — identical role, identical tools.
+- The Bedrock brain has not produced a live spoken turn in this account: the day-one quota blocks it, and AWS Support confirmed new accounts stay limited until they have billing history ([friction log F11](docs/SUBMISSION_FEEDBACK.md)); its behavior is covered by unit tests with an injected transport. The demo video is voiced by the Claude-API host instead — identical role, identical tools.
 - Completion evidence comes only from what the user says (no calendar/health integration), so outcomes stay *inconclusive* until a check-in; the demo persona's past history is fixture data marked done.
 - Gap discovery covers four gap types; question wording is templated (deterministic), not generated.
 - Trend detection (G6) measures scheduled adherence, not completion, and needs three weeks of calendar coverage.
