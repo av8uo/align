@@ -145,7 +145,7 @@ Requirements: **Node.js ≥ 24** (uses the built-in `node:sqlite`), any OS. No A
 
 ```bash
 npm install
-npm test        # 122 tests across 12 suites — engine, MCP wire, proactive quiet rule, host brains, intelligence + conversation evaluations
+npm test        # 146 tests across 16 suites — engine, MCP wire, proactive quiet rule, host brains, intelligence + conversation evaluations
 npm start       # http://localhost:3344/sim  (simulator) · /mcp (MCP endpoint) · /healthz · /stats
 ```
 
@@ -176,7 +176,7 @@ Whatever the setting, any LLM failure (bad key, quota, refusal) falls back to th
 
 ```
 Test Files  12 passed (12)
-     Tests  122 passed (122)
+     Tests  146 passed (146)
 ```
 
 Suites: `engine` (detectors, correlator, solver, learning), `schema`, `seed`, `mcp` (wire-level: full two-week demo arc over Streamable HTTP, latency budget asserted), `proactive` (quiet rule, honest week-later flow), `orchestrator` (LLM failure → rules fallback, conversation routing), `bedrock` / `anthropic` (host loops with injected transports), `memory`, `intelligence` — the evaluation suite on fixed fixtures, `conversation` — twelve multi-turn scenarios through the real HTTP server (new preference → plan respects it; duplicate → no second memory; change of mind → superseded; goal change → plan reconsidered; asked-and-answered → not repeated; support → no forced tool; ambiguous completion → nothing marked; correction used afterwards; server restart; session restart; approve/reject; LLM unavailable), and `context-eval` — a per-turn scorecard (facts available vs used, tools, persisted changes, repetition, unnecessary questions, false completions, unsupported claims). Its printed metrics on this fixture: **insight precision** 5 surfaced / 5 total with a planted no-history goal suppressed as weak; **question usefulness** 4 of 5 discovered gaps worth asking in week 2, top = the completion question (leverage 1); **outcome data completeness** 2 of 3 metrics fully confirmed after check-ins, health baseline 1; **ranking change** evening gym 0.87 (n=4) vs morning 0.20 (n=4, lower bound 0.04) → evening chosen, morning suppressed — without any stated preference. Run `npm test` to reproduce.
@@ -204,7 +204,7 @@ Mapping of [Alexa+ functional requirements](https://developer.amazon.com/docs/al
 | Real & working | Simulated (clearly labeled) | Deferred |
 |---|---|---|
 | MCP server (spec 2025-11-25), portable to any MCP host | The Alexa+ host: voice pipeline + **agent-initiated proactive speech** (no public API for add-on-initiated turns — filed as our #1 feature request) | Real calendar OAuth (`.ics`-style import + seeded data instead) |
-| Engine, memory, verified execution, learning loop — 122 automated tests | Echo Show / Echo Dot device frames | Multi-person households (schema ready) |
+| Engine, memory, verified execution, learning loop — 146 automated tests | Echo Show / Echo Dot device frames | Multi-person households (schema ready) |
 | LLM host brain: Claude via the Claude API voices the demo video; the Bedrock integration (Converse tool-use loop, circuit breaker, fallback) is implemented and tested with injected failures | — | **Bedrock as the live voice:** every Bedrock call on our new account is throttled by a daily token quota, and AWS Support declined the increase (Oct 21: Bedrock access is limited for new accounts until they build billing history — contact sales or retry in a month; friction log F11). The demo therefore uses the Claude API path — same tools, same engine, different plumbing |
 | Hourly background engine runs | — | **Hosted deployment:** the ECS Express Mode deploy script is complete and preflight-tested, but **not provisioned** — a deliberate no-cost decision; the project runs locally in two commands |
 | — | — | Finance *advice* (policy); only user-stated goals with self-reported progress · Real Alexa+ deployment (private preview gated) |
