@@ -21,6 +21,7 @@ import { briefingKey, orchestrate, newSession, type SessionState, type ToolCallR
 import { makeBedrockBrain } from "./sim/bedrock.js";
 import { makeAnthropicBrain } from "./sim/anthropic.js";
 import { buildContext, renderContext, proactiveInstruction } from "./sim/context.js";
+import { renderRecall, sinceLastTime } from "./sim/recall.js";
 import { runEngine } from "./engine/engine.js";
 import { addDays } from "./engine/time.js";
 
@@ -45,7 +46,7 @@ export function latencyReport(): Record<string, { count: number; avg_ms: number;
 
 // ---------------------------------------------------------------- output shapes
 const zBalance = z.array(
-  z.object({ domain: z.string(), score: z.number().nullable(), trend: z.string(), freshnessDays: z.number(), note: z.string() }),
+  z.object({ domain: z.string(), score: z.number().nullable(), trend: z.string(), freshnessDays: z.number(), note: z.string(), planned: z.number().nullable().optional() }),
 );
 const zEvidenceSummary = z.object({ events: z.number(), goals: z.number(), stated: z.number(), inferred: z.number(), alternatives: z.number() });
 const zInsightSummary = z.object({ id: z.string(), title: z.string(), severity: z.number(), domains: z.array(z.string()), confidence: z.number().optional(), evidence_summary: zEvidenceSummary.optional() });
@@ -474,7 +475,7 @@ export function createLifeOsHttpServer(db: DatabaseSync, today: string) {
         if (bedrockBrain && configured) {
           try {
             const out = await bedrockBrain(
-              proactiveInstruction(r.text, (r.data as { help?: Array<{ line: string }> }).help ?? []),
+              proactiveInstruction(r.text, (r.data as { help?: Array<{ line: string }> }).help ?? [], renderRecall(sinceLastTime(db, currentToday))),
               state,
               callTool,
             );

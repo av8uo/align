@@ -6,7 +6,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { EventRow, GoalRow, MemoryRow } from "../core/types.js";
 import { newId } from "../core/ids.js";
-import { goalActual, keywordOf } from "../engine/detectors.js";
+import { currencyOf, goalActual, keywordOf, moneyTarget } from "../engine/detectors.js";
 import { lifeBalance, type DomainScore } from "../engine/balance.js";
 import { loadCtx, runEngine } from "../engine/engine.js";
 import { markAsked, recordAnswer, recordDecline, questionDecision } from "../engine/inquiry.js";
@@ -348,7 +348,7 @@ export function checkIn(
       newId("log"), args.goal_id, now, args.amount, args.content,
     );
     const goal = db.prepare("SELECT title FROM goals WHERE id=?").get(args.goal_id) as { title: string } | undefined;
-    const target = Number(goal?.title.match(/\$(\d+)/)?.[1] ?? 0);
+    const target = moneyTarget(goal?.title ?? "");
     const month = today.slice(0, 7);
     const sum = db.prepare("SELECT COALESCE(SUM(value),0) AS s FROM goal_logs WHERE goal_id=? AND at LIKE ?").get(args.goal_id, `${month}%`) as { s: number };
     pacing = target > 0 ? (sum.s >= target ? `on target for ${month}` : `$${target - sum.s} short of the $${target} target for ${month}`) : null;
@@ -515,7 +515,7 @@ export function getGoalProgress(db: DatabaseSync, today: string, args: { goal_id
     if (g.domain === "finance") {
       const month = today.slice(0, 7);
       const sum = db.prepare("SELECT COALESCE(SUM(value),0) AS s FROM goal_logs WHERE goal_id=? AND at LIKE ?").get(g.id, `${month}%`) as { s: number };
-      return { goal_id: g.id, title: g.title, domain: g.domain, actual: sum.s, target: Number(g.title.match(/\$(\d+)/)?.[1] ?? 0), unit: "$ this month", streak_weeks: 0 };
+      return { goal_id: g.id, title: g.title, domain: g.domain, actual: sum.s, target: moneyTarget(g.title), unit: `${currencyOf(g.title)} this month`, streak_weeks: 0 };
     }
     const actual = goalActual(events, g, addDays(today, -7), today);
     let streak = 0;

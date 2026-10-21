@@ -73,6 +73,7 @@ export function makeAnthropicBrain(listTools: () => Promise<McpToolDef[]>, opts:
     const toolCalls: ToolCallRecord[] = [];
     let inTok = 0;
     let outTok = 0;
+    let nudged = false;
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
       let res: Anthropic.Message;
       try {
@@ -111,7 +112,21 @@ export function makeAnthropicBrain(listTools: () => Promise<McpToolDef[]>, opts:
           .map((b) => b.text)
           .join(" ")
           .trim();
-        return { reply: reply || "Sorry, I lost my train of thought — could you say that again?", toolCalls, brain: "anthropic" };
+        // Occasionally the model ends a tool turn with no words at all. Ask once
+        // for the spoken reply rather than making the user repeat themselves.
+        if (!reply && !nudged && round < MAX_TOOL_ROUNDS - 1) {
+          nudged = true;
+          log("claude api returned no text — asking once for the spoken reply");
+          const nudge: Anthropic.TextBlockParam = { type: "text", text: "(Now say your spoken reply to the user, from the tool results above: plain sentences, no tools.)" };
+          if (res.content.length === 0) {
+            messages.pop(); // an empty assistant turn is not valid history
+            const last = messages[messages.length - 1]!;
+            last.content = typeof last.content === "string" ? [{ type: "text", text: last.content }, nudge] : [...last.content, nudge];
+          } else messages.push({ role: "user", content: [nudge] });
+          continue;
+        }
+        const fallback = toolCalls.map((c) => c.text).filter(Boolean).join(" ");
+        return { reply: reply || fallback || "Sorry, I lost my train of thought — could you say that again?", toolCalls, brain: "anthropic" };
       }
 
       const results: Anthropic.ToolResultBlockParam[] = [];

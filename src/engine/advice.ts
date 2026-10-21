@@ -11,7 +11,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { EventRow, GoalRow } from "../core/types.js";
 import type { DomainScore } from "./balance.js";
-import { goalEvents, keywordOf } from "./detectors.js";
+import { goalEvents, keywordOf, moneyTarget } from "./detectors.js";
 import { rankCandidates, timePreferenceFor } from "./solver.js";
 import { addDays, weekdayOf } from "./time.js";
 
@@ -85,7 +85,7 @@ function financeLine(db: DatabaseSync, today: string, goals: GoalRow[]): HelpLin
   const parts: string[] = [];
   let basis: HelpLine["basis"] = "confirmed";
   for (const g of fin) {
-    const target = Number(g.title.match(/\$(\d+)/)?.[1] ?? 0);
+    const target = moneyTarget(g.title);
     if (!target) continue;
     const logged = (db.prepare("SELECT COALESCE(SUM(value),0) AS s FROM goal_logs WHERE goal_id=? AND at LIKE ?").get(g.id, `${month}%`) as { s: number }).s;
     const pace = Math.round(target * (day / daysInMonth));

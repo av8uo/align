@@ -138,7 +138,8 @@ describe("G — ambiguous completion statements never mark anything done", () =>
       await say("Yes, do it");
       await fetch(`${b3}/demo/advance`, { method: "POST" });
       const wk = await proactive(b3, "g");
-      expect(wk.data.question?.text).toMatch(/^Did date night with Sam happen/);
+      // Family was asked about last week, so the question rotates to another area.
+      expect(wk.data.question?.text).toMatch(/^Last week I scheduled gym 3 times/);
       const marks = () => (db3.prepare("SELECT COUNT(*) AS n FROM events WHERE completion_source='user_said'").get() as { n: number }).n;
       const a = await say("It was a weird week");
       expect(tools(a)).toEqual([]);
@@ -146,8 +147,8 @@ describe("G — ambiguous completion statements never mark anything done", () =>
       const b = await say("I think I went once or twice, not sure");
       expect(marks()).toBe(0);
       expect(b.reply).toMatch(/yes, a no, or a number|couldn't tell|leave it unrecorded/i); // second hedge: no repeated sentence, still nothing recorded
-      const c = await say("Yes, we did");
-      expect(marks()).toBe(1);
+      const c = await say("Yes, all three");
+      expect(marks()).toBe(3);
       expect(c.reply).toMatch(/recorded that as done/);
     } finally {
       s3.close();

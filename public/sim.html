@@ -42,7 +42,12 @@
   .card h3 { font-size: 13px; color: var(--dim); text-transform: uppercase; letter-spacing: .6px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
   .row { display: flex; align-items: center; gap: 10px; padding: 5px 0; }
   .dom { width: 86px; color: var(--dim); font-size: 13px; text-transform: capitalize; }
-  .bar { flex: 1; height: 11px; border-radius: 6px; background: #0c1016; overflow: hidden; box-shadow: inset 0 1px 2px rgba(0,0,0,.6); }
+  .bar { flex: 1; height: 11px; border-radius: 6px; background: #0c1016; overflow: hidden; box-shadow: inset 0 1px 2px rgba(0,0,0,.6); position: relative; }
+  /* The faint "if this week's plan happens" level, behind the real (evidence) fill. */
+  .bar b.plan { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 6px; background: repeating-linear-gradient(135deg, rgba(120,170,255,.32) 0 5px, rgba(120,170,255,.16) 5px 10px);
+    transition: width 1.15s cubic-bezier(.22,.61,.36,1); }
+  .bar i { z-index: 1; }
+  .planned { display: block; font-size: 10.5px; font-weight: 500; color: #7fa6ff; line-height: 1; }
   /* The "liquid": a gradient fill that slides to its new level and fades to its new colour. */
   .bar i { display: block; height: 100%; border-radius: 6px; position: relative;
     transition: width 1.15s cubic-bezier(.22,.61,.36,1), background-color 1.15s ease, box-shadow 1.15s ease; }
@@ -159,37 +164,46 @@ function balanceCard(balance) {
   const rows = balance.map((b) => `
     <div class="row" data-domain="${esc(b.domain)}">
       <span class="dom">${esc(b.domain)}</span>
-      <span class="bar"><i class="${tone(b.score)}" style="width:${b.score ?? 4}%"></i></span>
-      <span class="val" data-score="${b.score === null ? "" : b.score}">${b.score === null ? "—" : b.score}</span>
+      <span class="bar"><b class="plan" style="width:0%"></b><i class="${tone(b.score)}" style="width:0%"></i></span>
+      <span class="val" data-score="">—</span>
       <span class="trend" style="color:${trendColor(b.trend)}">${arrow[b.trend] ?? "–"}</span>
     </div>`).join("");
-  return `<div class="card" id="balance"><h3>Life balance <span class="dimtxt">this week · live</span><span class="dimtxt" id="balance-pulse" style="float:right"></span></h3>${rows}</div>`;
+  return `<div class="card" id="balance"><h3>Life balance <span class="dimtxt">confirmed · <span style="color:#7fa6ff">▨ if this week's plan happens</span></span><span class="dimtxt" id="balance-pulse" style="float:right"></span></h3>${rows}</div>`;
 }
 // Numbers count up or down one by one (12, 13, 14…) while the bar slides.
+// A new target mid-count restarts from the number on screen — no jumps.
+const shown = new WeakMap(); // el → number currently displayed
 function countTo(el, from, to) {
-  if (from === to) { el.textContent = String(to); return; }
-  const steps = Math.abs(to - from);
-  const dur = Math.min(1100, 180 + steps * 28);
+  el._count = (el._count ?? 0) + 1;
+  const run = el._count;
+  from = shown.get(el) ?? from;
+  if (from === to) { el.textContent = String(to); shown.set(el, to); return; }
+  const dur = 1150; // same duration as the bar's slide, so number and bar land together
   const t0 = performance.now();
   el.classList.remove("rising", "falling");
   el.classList.add(to > from ? "rising" : "falling");
   const tick = (now) => {
+    if (el._count !== run) return; // superseded by a newer update
     const k = Math.min(1, (now - t0) / dur);
     const eased = 1 - Math.pow(1 - k, 3);
-    el.textContent = String(Math.round(from + (to - from) * eased));
+    const v = Math.round(from + (to - from) * eased);
+    el.textContent = String(v);
+    shown.set(el, v);
     if (k < 1) requestAnimationFrame(tick);
-    else setTimeout(() => el.classList.remove("rising", "falling"), 900);
+    else setTimeout(() => { if (el._count === run) el.classList.remove("rising", "falling"); }, 900);
   };
   requestAnimationFrame(tick);
 }
 // Apply fresh scores to the existing card so CSS transitions animate the change.
 function applyBalance(balance) {
-  const card = $("balance");
+  let card = $("balance");
   if (!card) {
+    // First appearance: draw empty bars, then fill them on the next frame so they grow in.
     const holder = document.createElement("div");
     holder.innerHTML = balanceCard(balance);
-    $("content").prepend(holder.firstElementChild);
-    return;
+    card = holder.firstElementChild;
+    $("content").prepend(card);
+    card.getBoundingClientRect();
   }
   let changed = false;
   for (const b of balance) {
@@ -210,11 +224,14 @@ function applyBalance(balance) {
     const fill = row.querySelector(".bar i");
     const val = row.querySelector(".val");
     const trend = row.querySelector(".trend");
-    const prev = val.dataset.score === "" ? null : Number(val.dataset.score);
+    const prev = val.dataset.score === "" ? 0 : Number(val.dataset.score);
     fill.className = tone(b.score);
     fill.style.width = `${b.score ?? 4}%`;
-    if (b.score === null) val.textContent = "—";
-    else if (prev === null) val.textContent = String(b.score);
+    const plan = row.querySelector(".bar b.plan");
+    const ahead = b.score !== null && b.planned != null && b.planned > b.score ? b.planned : null;
+    if (plan) plan.style.width = `${ahead ?? 0}%`;
+    row.title = ahead ? `If this week's plan happens: ${ahead}` : "";
+    if (b.score === null) { val._count = (val._count ?? 0) + 1; shown.delete(val); val.textContent = "—"; }
     else countTo(val, prev, b.score);
     val.dataset.score = b.score === null ? "" : String(b.score);
     trend.style.color = trendColor(b.trend);
@@ -351,7 +368,7 @@ function speak(text, who, force = false) {
   const u = new SpeechSynthesisUtterance(text);
   u.lang = "en-US";
   if (alignVoice) u.voice = alignVoice;
-  u.rate = 1.04;
+  u.rate = 1.25;
   $("ring").classList.add("on");
   // On-screen speech status, so a silent machine can be diagnosed without DevTools.
   const status = (msg) => { $("voicehint").textContent = msg; };

@@ -91,16 +91,21 @@ export function buildContext(db: DatabaseSync, state: SessionState, text: string
  * briefing, but every engine-supplied "What would help" step is listed and must
  * be kept with its evidence, and no advice may be added.
  */
-export function proactiveInstruction(computedText: string, help: Array<{ line: string }> = []): string {
+export function proactiveInstruction(computedText: string, help: Array<{ line: string }> = [], recall = ""): string {
   const steps = help.length
     ? `\n\nNext steps the engine derived from evidence (use ONLY these; never add advice of your own):\n${help.map((h) => `- ${h.line}`).join("\n")}`
     : "";
   return (
     `(Proactive turn — you speak first, unprompted, like a coach who has been watching the week: short and specific, not a report. ` +
-    `Open with the ONE next step that matters most to the user's top-ranked value (family first if it is there) — what and why, in one breath, with its numbers. ` +
-    `Then at most one other item from the briefing, in a few words. If there is a question at the end of the briefing, ask it last, lightly, in natural words that keep its exact meaning (same person, same topic) — never press for an answer or mention that it went unanswered before. ` +
-    `Do NOT open with the headline sentence verbatim, do NOT list every number, do NOT say "Here's your briefing", do NOT call tools. If a plan is on offer, mention it in five words. 2–3 spoken sentences total; the user can ask for the rest.)` +
+    (recall
+      ? `OPEN by picking up the thread of your last conversation in one short clause, tied to what comes next ("You told me you hate morning gym, so gym is in the evenings now —"); never a generic greeting. ` +
+        `If the briefing's question follows from that thread, go STRAIGHT from the thread to the question — nothing in between, no other item, and NOTHING after the question (it is the last sentence). Otherwise, `
+      : `Open with `) +
+    `the ONE next step that matters most to the user's top-ranked values — what and why, in one breath, with its numbers. ` +
+    `Add a second item only if it is about a different person or domain AND you have not mentioned it in this conversation yet, in a few words. If there is a question at the end of the briefing, ask it last, lightly, in natural words that keep its exact meaning (same person, same topic) — never press for an answer or mention that it went unanswered before. If that question asks whether something happened, it is UNKNOWN until they answer: never call it missed or skipped — and then OPEN with that question in a few words, and do NOT also recommend that same activity (asking "did date night happen?" and "protect date night" in one breath is repetitive); give one next step about something else, briefly, after it. ` +
+    `Do NOT open with the headline sentence verbatim, do NOT list every number, do NOT say "Here's your briefing", do NOT call tools. If a plan is on offer, mention it in five words. 2 spoken sentences plus the question, under 45 words total (a first-meeting introduction: under 25 words, name + one question); times as people say them ("Friday at 7 pm"); the user can ask for the rest.)` +
     steps +
+    recall +
     `\n\nBriefing (full computed content, for reference):\n${computedText}`
   );
 }

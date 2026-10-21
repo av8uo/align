@@ -106,20 +106,21 @@ describe("one week later: measure, adapt, next knowledge gap", () => {
     expect(r.text).not.toMatch(/all improved|went 0 to/);
     expect(r.data.outcomes.length).toBeGreaterThanOrEqual(4);
     expect(r.data.outcomes.every((o) => o.verdict === "inconclusive")).toBe(true);
-    expect(r.data.question?.text).toBe("Did date night with Sam happen on Friday?"); // discovered completion gap, named from the stated fact
+    // Family was asked about last week, so the completion question rotates to the next area.
+    expect(r.data.question?.text).toBe("Last week I scheduled gym 3 times — how many actually happened?");
   });
 
   it("the answer becomes completion evidence and the verdict updates from it", async () => {
-    const r = await chat("Yes, we did!");
+    const r = await chat("Twice.");
     expect(r.toolCalls[0]?.name).toBe("check_in");
-    expect(r.reply).toContain("recorded that as done");
-    expect(r.reply).toContain("family (date night): improved");
+    expect(r.reply).toContain("2 done");
+    expect(r.reply).toContain("health (gym): improved");
   });
 
-  it("stated completions ('went to the gym twice') are recorded as evidence, nothing else assumed", async () => {
-    const r = await chat("I went to the gym twice");
+  it("stated completions ('we had date night on Friday') are recorded as evidence, nothing else assumed", async () => {
+    const r = await chat("We had date night on Friday");
     expect(r.toolCalls[0]?.name).toBe("check_in");
-    expect((r.toolCalls[0]!.data as { completions_recorded: string[] }).completions_recorded.length).toBe(2);
+    expect((r.toolCalls[0]!.data as { completions_recorded: string[] }).completions_recorded.length).toBe(1);
   });
 
   it("self-reported savings log with pacing arithmetic (user's own numbers, no advice)", async () => {

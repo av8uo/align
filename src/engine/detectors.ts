@@ -37,6 +37,13 @@ const inWindow = (e: EventRow, from: string, to: string): boolean =>
   e.start >= dayStart(from) && e.start < dayStart(to);
 
 /** Events matching a goal in a window — scheduled, done, missed or unknown alike. */
+/** A money goal's monthly target from its title: "$500/month", "€300/month", "300 euros". 0 if none. */
+export function moneyTarget(title: string): number {
+  const m = title.match(/[$€£]\s?(\d+)|(\d+)\s?(?:[$€£]|euros?|dollars?|pounds?)/i);
+  return Number(m?.[1] ?? m?.[2] ?? 0);
+}
+export const currencyOf = (title: string): string => (/€|euro/i.test(title) ? "€" : /£|pound/i.test(title) ? "£" : "$");
+
 export function goalEvents(events: EventRow[], g: GoalRow, from: string, to: string): EventRow[] {
   return events.filter((e) => matches(e, g) && inWindow(e, from, to));
 }
@@ -168,7 +175,7 @@ export function g7FinancePacing(ctx: Ctx): Finding[] {
   const out: Finding[] = [];
   for (const g of ctx.goals) {
     if (g.status !== "active" || g.domain !== "finance") continue;
-    const target = Number(g.title.match(/\$(\d+)/)?.[1] ?? 0);
+    const target = moneyTarget(g.title);
     if (!target) continue;
     const logs = ctx.goalLogs.filter((l) => l.goal_id === g.id && l.at.startsWith(month));
     const sum = logs.reduce((a, l) => a + (l.value ?? 0), 0);

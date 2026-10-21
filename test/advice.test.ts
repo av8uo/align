@@ -87,7 +87,7 @@ describe("proactive instruction to the host model", () => {
     for (const h of help) expect(instruction).toContain(`- ${h.line}`);
     expect(instruction).toMatch(/use ONLY these; never add advice of your own/);
     expect(instruction).toMatch(/ONE next step that matters most to the user's top-ranked value/);
-    expect(instruction).toMatch(/2–3 spoken sentences total/);
+    expect(instruction).toMatch(/2 spoken sentences plus the question, under 45 words/);
     expect(instruction).toContain(b.text); // the computed briefing travels with it, unchanged
     // Without help lines, no step block is injected.
     expect(proactiveInstruction("Here's your briefing.", [])).not.toContain("Next steps the engine derived");

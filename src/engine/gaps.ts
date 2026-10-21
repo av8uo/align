@@ -10,7 +10,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { EventRow, GoalRow, MemoryRow } from "../core/types.js";
 import type { Ctx } from "./detectors.js";
-import { goalEvents, keywordOf } from "./detectors.js";
+import { currencyOf, goalEvents, keywordOf, moneyTarget } from "./detectors.js";
 import { parseValuesRanking } from "./balance.js";
 import { newId } from "../core/ids.js";
 import { addDays, dayStart, daysBetween } from "./time.js";
@@ -126,7 +126,10 @@ export function discoverGaps(db: DatabaseSync, ctx: Ctx): GapDraft[] {
     if (g.status !== "active" || g.domain !== "finance") continue;
     const logged = ctx.goalLogs.some((l) => l.goal_id === g.id && l.at.startsWith(month));
     if (logged) continue;
-    const target = g.title.match(/\$(\d+)/)?.[1];
+    const target = moneyTarget(g.title);
+    // "$500/month house fund" → "the house fund"; "€300/month for Lina's studies" → "Lina's studies"
+    const label = g.title.replace(/[$€£]\s?\d+|\d+\s?(?:[$€£]|euros?|dollars?|pounds?)/i, "").replace(/\/\s?month|\b(a|per) month\b/i, "").replace(/^\W*(for|toward|towards|into|to)\s+/i, "").trim();
+    const what = /^(house|savings|emergency|holiday|vacation)\b/i.test(label) ? `the ${label}` : label || "it";
     drafts.push({
       id: `gap_progress_${g.id}`,
       kind: "unknown",
@@ -141,7 +144,7 @@ export function discoverGaps(db: DatabaseSync, ctx: Ctx): GapDraft[] {
       burden: 0.15,
       sensitive: false,
       decisionRef: `pacing:${g.id}`,
-      question: target ? `You wanted $${target} into the house fund this month — how is it going?` : `How is "${g.title}" going this month?`,
+      question: target ? `You wanted ${currencyOf(g.title)}${target} a month toward ${what} — how much went in this month?` : `How is "${g.title}" going this month?`,
       reason: "The only way to know how you're pacing on a goal you track yourself.",
     });
   }
@@ -209,6 +212,9 @@ export const ASK_THRESHOLD = 0.12;
 
 /** An unanswered question comes back only after this long (and only once) unless the evidence changed. */
 export const REASK_AFTER_DAYS = 21;
+/** Rotation: questions in an area asked about within ROTATE_DAYS are scaled by ROTATION_FACTOR. */
+export const ROTATE_DAYS = 10;
+export const ROTATION_FACTOR = 0.6;
 /** After this many unanswered asks, silence is the answer: the question waits for new evidence. */
 export const MAX_UNANSWERED_ASKS = 2;
 
@@ -307,6 +313,13 @@ export interface PickedQuestion {
 export function pickQuestion(db: DatabaseSync, drafts: GapDraft[], today: string, personId = "alex"): PickedQuestion | null {
   const stored = db.prepare("SELECT * FROM knowledge_gaps WHERE person_id=? AND status='open'").all(personId) as unknown as StoredGap[];
   const todayIso = dayStart(today);
+  // Rotation: an area Align asked about in the last ROTATE_DAYS weighs less, so
+  // its questions move across the user's life instead of circling one topic.
+  const recentlyAsked = new Set(
+    (db
+      .prepare("SELECT g.domain FROM questions q JOIN knowledge_gaps g ON g.id = q.gap_id WHERE g.person_id=? AND q.asked_at IS NOT NULL AND q.asked_at >= ?")
+      .all(personId, dayStart(addDays(today, -ROTATE_DAYS))) as Array<{ domain: string }>).map((r) => r.domain),
+  );
   const scored = drafts
     .map((d) => {
       const row = stored.find((s) => s.id === d.id);
@@ -318,7 +331,7 @@ export function pickQuestion(db: DatabaseSync, drafts: GapDraft[], today: string
         .prepare("SELECT asked_at, asked_evidence FROM questions WHERE gap_id=? AND status='asked'")
         .all(d.id) as Array<{ asked_at: string | null; asked_evidence: string | null }>;
       if (!mayReask(unanswered, d.evidence, todayIso)) return null; // no nagging
-      return { d, score: scoreGap(d, row.declines, since) };
+      return { d, score: scoreGap(d, row.declines, since) * (recentlyAsked.has(d.domain) ? ROTATION_FACTOR : 1) };
     })
     .filter((x): x is { d: GapDraft; score: number } => x !== null)
     .sort((a, b) => b.score - a.score);
